@@ -1,7 +1,6 @@
 package com.jwh.launcher.ui;
 
 import com.jwh.launcher.auth.MicrosoftAuthenticator;
-import com.jwh.launcher.config.ConfigManager;
 import com.jwh.launcher.config.LauncherConfig;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -9,11 +8,9 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.TextField;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
@@ -47,8 +44,6 @@ public class MicrosoftLoginDialog {
 
     private Stage stage;
     private Label status;
-    private TextField clientId;
-    private Button applyId;
     private Button startBtn;
     private Button openSiteBtn;
     private Label codeLabel;
@@ -60,12 +55,12 @@ public class MicrosoftLoginDialog {
     private Thread worker;
     private AtomicBoolean cancelPoll = new AtomicBoolean(false);
 
-    /** 兼容旧调用：无配置对象（应用 Client ID 时不持久化）。 */
+    /** 兼容旧调用：无配置对象。 */
     public MicrosoftLoginDialog(BiConsumer<String, String> onTokens, Consumer<String> onError) {
         this(onTokens, onError, null);
     }
 
-    /** 带配置对象：应用 Client ID 时写回配置并保存。 */
+    /** 带配置对象：按内置/预置配置初始化认证器。 */
     public MicrosoftLoginDialog(BiConsumer<String, String> onTokens, Consumer<String> onError, LauncherConfig config) {
         this.config = config;
         this.onTokens = onTokens;
@@ -85,22 +80,6 @@ public class MicrosoftLoginDialog {
         title.setStyle("-fx-font-size:16px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT + ";");
 
         MicrosoftAuthenticator.init(config);
-        clientId = new TextField(MicrosoftAuthenticator.CLIENT_ID);
-        clientId.setPromptText("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx");
-        clientId.setId("microsoft-client-id");
-        clientId.setStyle("-fx-text-fill:" + Ui.TEXT + "; -fx-background-color:" + Ui.PANEL + ";");
-
-        Label clientLabel = label("登录应用 Client ID：默认使用 PCL 内置应用（无需自行注册，和 PCL 一样），也可以填自己注册的 Entra 应用；");
-
-        applyId = new Button("应用");
-        applyId.setId("microsoft-login-apply");
-        applyId.setStyle("-fx-background-color:#3FA9F5;-fx-text-fill:white;-fx-font-weight:bold;");
-        applyId.setOnAction(e -> applyClientId());
-        clientId.setOnAction(e -> applyClientId());
-
-        HBox clientRow = new HBox(10, clientId, applyId);
-        clientRow.setAlignment(Pos.CENTER_LEFT);
-        HBox.setHgrow(clientId, Priority.ALWAYS);
 
         stepLabel = label("和 PCL 一样：点击「开始登录」后，会弹出一个设备码并自动打开浏览器登录网页。"
                 + "在网页中输入设备码、用密码完成微软登录，本窗口会自动完成后续登录（无需经过官方确认页）。");
@@ -139,7 +118,7 @@ public class MicrosoftLoginDialog {
         HBox bottom = new HBox(10, cancelBtn);
         bottom.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox box = new VBox(12, title, clientLabel, clientRow, stepLabel, startBtn, hintLabel, codeLabel, openSiteBtn, status, bottom);
+        VBox box = new VBox(12, title, stepLabel, startBtn, hintLabel, codeLabel, openSiteBtn, status, bottom);
         box.setPadding(new Insets(20, 20, 20, 20));
         box.setStyle("-fx-background-color:" + Ui.BG + ";");
 
@@ -164,26 +143,6 @@ public class MicrosoftLoginDialog {
         l.setWrapText(true);
         l.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:13px;");
         return l;
-    }
-
-    /** 应用弹窗内填写的 Client ID：写回配置、重初始化认证器。 */
-    private void applyClientId() {
-        String id = (clientId.getText() == null ? "" : clientId.getText().trim());
-        if (!MicrosoftAuthenticator.isValidClientId(id)) {
-            setStatus("请输入合法的 GUID 格式 Client ID（默认使用内置应用，或填写你自己注册的 Entra 应用 ID；不要填写名称或密钥）。");
-            return;
-        }
-        boolean official = MicrosoftAuthenticator.PUBLIC_CLIENT_ID.equalsIgnoreCase(id);
-        if (config != null) {
-            config.microsoftClientId = id;
-            ConfigManager.save(config);
-        }
-        MicrosoftAuthenticator.init(config);
-        if (official) {
-            setStatus("已应用 Minecraft 官方应用 ID。注意：官方 ID 不支持设备码登录，请改回默认的 PCL 内置应用 ID。");
-        } else {
-            setStatus("已应用登录应用 ID。点击「开始登录」即可。");
-        }
     }
 
     /** 开始 PCL 同款设备码登录：请求设备码 → 自动复制并打开登录网页 → 后台轮询换令牌。 */
