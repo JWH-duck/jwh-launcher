@@ -1,0 +1,36 @@
+# ---- 构建 / 打包产物 ----
+target/
+dist/
+*.class
+dependency-reduced-pom.xml
+
+# ---- jar：仅保留 resources 内受版本管理的依赖包 ----
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+!src/main/resources/**/*.jar
+
+# ---- IDE / 编辑器 ----
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# ---- 运行时 / 缓存 / 日志（仅根目录） ----
+/logs/
+/.minecraft/
+/com/
+*.log
+hs_err_pid*.log
+*-installer.jar.log
+jwh-avatar.log
+config.json
+
+# ---- 根目录调试截图（resources 内图标不受影响） ----
+/*.png
+
+# ---- 设计工作目录 / 临时皮肤目录（仅根目录） ----
+/.creative-design/
+/CustomSkinLoader/
+
+# ---- 源码备份残留 ----
+*.bak_*

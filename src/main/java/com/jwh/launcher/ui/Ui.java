@@ -1,0 +1,410 @@
+package com.jwh.launcher.ui;
+
+import javafx.application.Platform;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonType;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.function.Consumer;
+
+/**
+ * UI 公共工具：后台任务执行（结果回到 FX 线程）、提示对话框、主题色。
+ * 主题色为可变静态字段，由 SettingsView「自定义背景 / 文字颜色」在保存后刷新，
+ * 界面随后整体重建以应用新主题。
+ */
+public final class Ui {
+
+    public static String BG = "#f5f6f8";
+    public static String BG_LIGHT = "#e9ebee";
+    public static String PANEL = "rgba(255,255,255,0.75)";
+    public static final String ACCENT = "#3FA9F5";
+    public static String TEXT = "#1f2328";
+    public static String TEXT_DIM = "#6b7280";
+
+    /** 白色渐变背景（默认主题，用于主窗口与卡片）。 */
+    public static String BG_GRADIENT =
+            "linear-gradient(to bottom right, #ffffff 0%, #f4f6f9 55%, #e9edf2 100%)";
+
+    /** 按用户配置刷新主题色。 */
+    public static void applyTheme(com.jwh.launcher.config.LauncherConfig cfg) {
+        String mode = cfg.bgMode == null ? "default" : cfg.bgMode;
+        boolean custom = cfg.textColor != null && !cfg.textColor.isBlank();
+        boolean customDim = cfg.dimColor != null && !cfg.dimColor.isBlank();
+        // 文字颜色：默认主题（白色背景）用深色文字；图片/透明背景（深色半透明）用浅色文字，保证可读
+        if ("image".equals(mode) || "transparent".equals(mode)) {
+            TEXT = custom ? cfg.textColor : "#e8eaed";
+            TEXT_DIM = customDim ? cfg.dimColor : "#9aa0a6";
+        } else {
+            TEXT = custom ? cfg.textColor : "#1f2328";
+            TEXT_DIM = customDim ? cfg.dimColor : "#6b7280";
+        }
+        // 面板/背景色随背景模式调整：图片/透明模式下用半透明深色，让背景透出
+        switch (mode) {
+            case "image" -> {
+                BG = "rgba(14,17,22,0.55)";
+                BG_LIGHT = "rgba(20,24,30,0.72)";
+                PANEL = "rgba(30,35,44,0.66)";
+            }
+            case "transparent" -> {
+                // 真透明窗口：面板更透，让桌面壁纸透出
+                BG = "rgba(8,10,14,0.30)";
+                BG_LIGHT = "rgba(12,16,22,0.50)";
+                PANEL = "rgba(20,25,32,0.45)";
+            }
+            default -> {
+                BG = "#f5f6f8";
+                BG_LIGHT = "#e9ebee";
+                PANEL = "rgba(255,255,255,0.75)";
+            }
+        }
+    }
+
+    /** 官网风格草方块图标（版本列表 / Mod 等列表的默认占位头像），内置资源避免联网。 */
+    public static final javafx.scene.image.Image GRASS_BLOCK = loadImage("/grass_block.png");
+    /** 愚人节版本图标：粘液块（MC 官方贴图，HMCL 同款）。 */
+    public static final javafx.scene.image.Image SLIME_BLOCK = loadImage("/slime_block.png");
+    /** 远古版图标：工作台正面（MC 官方贴图，HMCL 同款）。 */
+    public static final javafx.scene.image.Image CRAFTING_TABLE = loadImage("/crafting_table_front.png");
+
+    /** 皮肤预览「走动」开关图标：深色线稿用于浅色背景，白色线稿用于深色背景。 */
+    public static final javafx.scene.image.Image WALK_DARK = loadImage("/walk_icon_dark.png", 64);
+    public static final javafx.scene.image.Image WALK_LIGHT = loadImage("/walk_icon_light.png", 64);
+
+    private static javafx.scene.image.Image loadImage(String res, int size) {
+        try {
+            java.io.InputStream in = Ui.class.getResourceAsStream(res);
+            return in == null ? null : new javafx.scene.image.Image(in, size, size, true, true);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static javafx.scene.image.Image loadImage(String res) {
+        return loadImage(res, 32);
+    }
+
+    /** 加载全局样式表到场景。 */
+    public static void applyStylesheet(javafx.scene.Scene scene) {
+        java.net.URL css = Ui.class.getResource("/style.css");
+        if (css != null) {
+            scene.getStylesheets().add(css.toExternalForm());
+        }
+    }
+
+    private static final ExecutorService POOL = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "jwh-worker");
+        t.setDaemon(true);
+        return t;
+    });
+
+    private Ui() {
+    }
+
+    /** 在后台线程执行任务，成功/失败回调在 FX 线程。 */
+    public static void async(java.util.concurrent.Callable<Void> task,
+                             Consumer<String> onSuccess, Consumer<Exception> onError) {
+        POOL.submit(() -> {
+            try {
+                task.call();
+                if (onSuccess != null) Platform.runLater(() -> onSuccess.accept(null));
+            } catch (Exception e) {
+                if (onError != null) {
+                    Platform.runLater(() -> onError.accept(e));
+                } else {
+                    Platform.runLater(() -> error("操作失败", e));
+                }
+            }
+        });
+    }
+
+    /** 泛型版本：后台任务可携带返回值。 */
+    public static <T> void async2(java.util.concurrent.Callable<T> task,
+                                  Consumer<T> onSuccess, Consumer<Exception> onError) {
+        POOL.submit(() -> {
+            try {
+                T result = task.call();
+                if (onSuccess != null) Platform.runLater(() -> onSuccess.accept(result));
+            } catch (Exception e) {
+                if (onError != null) {
+                    Platform.runLater(() -> onError.accept(e));
+                } else {
+                    Platform.runLater(() -> error("操作失败", e));
+                }
+            }
+        });
+    }
+
+    /** 带进度回调的异步任务（进度回调也切到 FX 线程）。 */
+    public static void asyncProgress(
+            java.util.function.Consumer<java.util.function.Consumer<String>> taskWithProgress,
+            Consumer<String> progress,
+            Consumer<String> onSuccess,
+            Consumer<Exception> onError) {
+        POOL.submit(() -> {
+            try {
+                taskWithProgress.accept(s -> Platform.runLater(() -> progress.accept(s)));
+                if (onSuccess != null) Platform.runLater(() -> onSuccess.accept(null));
+            } catch (Exception e) {
+                if (onError != null) {
+                    Platform.runLater(() -> onError.accept(e));
+                } else {
+                    Platform.runLater(() -> error("操作失败", e));
+                }
+            }
+        });
+    }
+
+    public static void error(String title, Exception e) {
+        error(title, e == null ? "未知错误" : e.getMessage());
+    }
+
+    /** 主窗口句柄：弹窗挂到它身上，避免弹窗跑到主窗后面/被当成“没反应”。 */
+    public static volatile javafx.stage.Window dialogOwner = null;
+
+    /** 弹窗统一样式：放大字号 + 归属主窗口 + 居中置顶。 */
+    private static void styleDialog(Alert a) {
+        try {
+            a.getDialogPane().setStyle("-fx-font-size:14px;");
+        } catch (Exception ignored) {
+        }
+        try {
+            javafx.stage.Window owner = dialogOwner;
+            if (owner == null) {
+                for (javafx.stage.Window w : javafx.stage.Window.getWindows()) {
+                    if (w instanceof javafx.stage.Stage s && s.isShowing()) {
+                        owner = s;
+                        break;
+                    }
+                }
+            }
+            if (owner != null && owner.isShowing()) {
+                a.initOwner(owner);
+                javafx.stage.Window o = owner;
+                a.setOnShown(ev -> {
+                    try {
+                        a.setX(o.getX() + (o.getWidth() - a.getWidth()) / 2);
+                        a.setY(o.getY() + (o.getHeight() - a.getHeight()) / 2);
+                        javafx.stage.Window self = a.getDialogPane().getScene().getWindow();
+                        if (self != null) {
+                            self.requestFocus();
+                        }
+                        a.getDialogPane().requestFocus();
+                    } catch (Exception ignored) {
+                    }
+                });
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    /**
+     * 列表滚轮接管：无论 ListView 处于何种布局/嵌套，滚轮事件都会先经过
+     * 本过滤器，直接驱动垂直滚动条（decrement/increment），保证滚轮一定
+     * 能滚动列表（修复实例管理等处原生滚轮失效）。无滚动需求时交给默认行为。
+     */
+    public static void bindWheelScroll(javafx.scene.control.ListView<?> list) {
+        list.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, e -> {
+            javafx.scene.control.ScrollBar bar = null;
+            for (javafx.scene.Node n : list.lookupAll(".scroll-bar")) {
+                if (n instanceof javafx.scene.control.ScrollBar b
+                        && b.getOrientation() == javafx.geometry.Orientation.VERTICAL) {
+                    bar = b;
+                    break;
+                }
+            }
+            if (bar == null || !bar.isVisible()) return; // 无滚动需求
+            double d = e.getDeltaY();
+            if (d == 0) return;
+            int steps = (int) Math.ceil(Math.abs(d) / 12.0); // 一格 deltaY≈40 → 3 步
+            if (d > 0) {
+                for (int i = 0; i < steps; i++) bar.decrement();
+            } else {
+                for (int i = 0; i < steps; i++) bar.increment();
+            }
+            e.consume();
+        });
+    }
+
+    /** 页面切换动效时长（毫秒）；-Djwh.pageAnimMs=0 可关闭动画（低配/无障碍）。 */
+    private static int pageAnimMs() {
+        try {
+            int v = Integer.parseInt(System.getProperty("jwh.pageAnimMs", "230").trim());
+            if (v < 0) v = 0;
+            if (v > 2000) v = 2000;
+            return v;
+        } catch (Exception e) {
+            return 230;
+        }
+    }
+
+    /** 页面切换动效（进入）：新页面从右侧滑入并淡入，PCL 风格的翻页手感。 */
+    public static void pageIn(javafx.scene.Node node) {
+        if (node == null) return;
+        int ms = pageAnimMs();
+        if (ms == 0) {
+            node.setTranslateX(0);
+            node.setOpacity(1);
+            return;
+        }
+        node.setTranslateX(52);
+        node.setOpacity(0);
+        javafx.animation.TranslateTransition tt = new javafx.animation.TranslateTransition(
+                javafx.util.Duration.millis(ms), node);
+        tt.setFromX(52);
+        tt.setToX(0);
+        tt.setInterpolator(javafx.animation.Interpolator.SPLINE(0.22, 0.61, 0.36, 1));
+        javafx.animation.FadeTransition ft = new javafx.animation.FadeTransition(
+                javafx.util.Duration.millis(Math.max(1, ms * 8 / 10)), node);
+        ft.setFromValue(0);
+        ft.setToValue(1);
+        javafx.animation.ParallelTransition pt = new javafx.animation.ParallelTransition(tt, ft);
+        pt.play();
+    }
+
+    /** 页面切换动效（退出）：向右滑出并淡出，结束后执行 after（清空覆盖层等收尾）。 */
+    public static void pageOut(javafx.scene.Node node, Runnable after) {
+        if (node == null) {
+            if (after != null) after.run();
+            return;
+        }
+        int ms = pageAnimMs();
+        if (ms == 0) {
+            node.setTranslateX(0);
+            node.setOpacity(1);
+            if (after != null) after.run();
+            return;
+        }
+        javafx.animation.TranslateTransition tt = new javafx.animation.TranslateTransition(
+                javafx.util.Duration.millis(Math.max(1, ms * 8 / 10)), node);
+        tt.setFromX(node.getTranslateX());
+        tt.setToX(52);
+        tt.setInterpolator(javafx.animation.Interpolator.SPLINE(0.55, 0.06, 0.68, 0.19));
+        javafx.animation.FadeTransition ft = new javafx.animation.FadeTransition(
+                javafx.util.Duration.millis(Math.max(1, ms * 7 / 10)), node);
+        ft.setFromValue(node.getOpacity());
+        ft.setToValue(0);
+        javafx.animation.ParallelTransition pt = new javafx.animation.ParallelTransition(tt, ft);
+        pt.setOnFinished(e -> {
+            node.setTranslateX(0);
+            node.setOpacity(1);
+            if (after != null) after.run();
+        });
+        pt.play();
+    }
+
+    public static void error(String title, String msg) {
+        Alert a = new Alert(Alert.AlertType.ERROR, msg == null ? "" : msg, ButtonType.OK);
+        a.setTitle(title);
+        a.setHeaderText(title);
+        styleDialog(a);
+        a.showAndWait();
+    }
+
+    /** 信息提示 sink：LauncherApp 启动时注册后，info 改为窗口内 toast（不弹窗）。 */
+    public static volatile java.util.function.Consumer<String> toastSink = null;
+
+    public static void info(String title, String msg) {
+        String text = (title == null || title.isBlank() ? "" : title + "：") + msg;
+        if (toastSink != null) {
+            toastSink.accept(text);
+            return;
+        }
+        Alert a = new Alert(Alert.AlertType.INFORMATION, msg, ButtonType.OK);
+        a.setTitle(title);
+        a.setHeaderText(title);
+        styleDialog(a);
+        a.showAndWait();
+    }
+
+    public static boolean confirm(String title, String msg) {
+        Alert a = new Alert(Alert.AlertType.CONFIRMATION, msg, ButtonType.YES, ButtonType.NO);
+        a.setTitle(title);
+        a.setHeaderText(title);
+        styleDialog(a);
+        return a.showAndWait().orElse(ButtonType.NO) == ButtonType.YES;
+    }
+
+    /**
+     * 整合包导出选项：勾选是否把存档一起打包 + 选包格式（CurseForge / Modrinth）。
+     *
+     * @return null=取消；否则 [0]=是否含存档(1/0)、[1]=格式(0=CurseForge, 1=Modrinth)
+     */
+    public static int[] packExportOptions(String title, String msg, boolean hasSaves) {
+        javafx.scene.control.Label body = new javafx.scene.control.Label(msg);
+        body.setWrapText(true);
+        body.setMaxWidth(470);
+
+        javafx.scene.control.CheckBox saves = new javafx.scene.control.CheckBox("包含存档 saves（世界进度一起打包）");
+        if (!hasSaves) {
+            saves.setText("包含存档 saves（这个实例里没有存档）");
+            saves.setDisable(true);
+            saves.setSelected(false);
+        }
+
+        javafx.scene.control.RadioButton cf = new javafx.scene.control.RadioButton(
+                "CurseForge 结构（.zip）：PCL / HMCL / CurseForge 认");
+        javafx.scene.control.RadioButton mr = new javafx.scene.control.RadioButton(
+                "Modrinth 结构（.mrpack）：Modrinth App / Prism 认");
+        javafx.scene.control.ToggleGroup tg = new javafx.scene.control.ToggleGroup();
+        cf.setToggleGroup(tg);
+        mr.setToggleGroup(tg);
+        cf.setSelected(true);
+
+        javafx.scene.control.Label hint = new javafx.scene.control.Label(
+                "两种格式都能再拖回本启动器导入；内容一样，只是清单文件不同。");
+        hint.setWrapText(true);
+        hint.setMaxWidth(470);
+        hint.setStyle("-fx-text-fill:" + TEXT_DIM + "; -fx-font-size:12px;");
+
+        javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(10,
+                body, new javafx.scene.control.Separator(), saves, cf, mr, hint);
+        box.setPadding(new javafx.geometry.Insets(4, 0, 0, 0));
+
+        Alert a = new Alert(Alert.AlertType.CONFIRMATION, "", ButtonType.YES, ButtonType.NO);
+        a.setTitle(title);
+        a.setHeaderText(title);
+        a.getDialogPane().setContent(box);
+        a.getDialogPane().setPrefWidth(520);
+        styleDialog(a);
+        if (a.showAndWait().orElse(ButtonType.NO) != ButtonType.YES) return null;
+        return new int[]{saves.isSelected() ? 1 : 0, mr.isSelected() ? 1 : 0};
+    }
+
+    /**
+     * 单行文本输入弹窗（服务器地址之类）。
+     *
+     * @return 用户填的内容（已 trim）；取消或留空返回 null
+     */
+    public static String promptText(String title, String msg, String initial, String placeholder) {
+        javafx.scene.control.Label body = new javafx.scene.control.Label(msg);
+        body.setWrapText(true);
+        body.setMaxWidth(430);
+
+        javafx.scene.control.TextField field = new javafx.scene.control.TextField(initial == null ? "" : initial);
+        field.setPromptText(placeholder == null ? "" : placeholder);
+        field.setPrefWidth(430);
+        field.setStyle("-fx-background-color:#ffffff; -fx-text-fill:" + TEXT + ";"
+                + "-fx-prompt-text-fill:#8a9099; -fx-background-radius:6;"
+                + "-fx-border-color:#d7dbe0; -fx-border-radius:6; -fx-padding:7 9 7 9; -fx-font-size:13px;");
+
+        javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(10, body, field);
+        box.setPadding(new javafx.geometry.Insets(4, 0, 0, 0));
+
+        javafx.scene.control.ButtonType okType =
+                new javafx.scene.control.ButtonType("确定", javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        javafx.scene.control.ButtonType cancelType =
+                new javafx.scene.control.ButtonType("取消", javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
+        Alert a = new Alert(Alert.AlertType.CONFIRMATION, "", okType, cancelType);
+        a.setTitle(title);
+        a.setHeaderText(title);
+        a.getDialogPane().setContent(box);
+        a.getDialogPane().setPrefWidth(500);
+        styleDialog(a);
+        // 弹窗打开后光标直接落在输入框里
+        javafx.application.Platform.runLater(field::requestFocus);
+        if (a.showAndWait().orElse(cancelType) != okType) return null;
+        String v = field.getText() == null ? "" : field.getText().trim();
+        return v.isEmpty() ? null : v;
+    }
+}

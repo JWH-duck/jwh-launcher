@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.jwh</groupId>
+    <artifactId>jwh-launcher</artifactId>
+    <version>1.5.8</version>
+    <packaging>jar</packaging>
+
+    <name>JWH Launcher</name>
+    <description>类似 PCL / HMCL 的 Minecraft 启动器：正版+离线登录、版本隔离、版本/加载器/Mod/光影/材质包下载</description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <javafx.version>21.0.5</javafx.version>
+        <json.version>20240303</json.version>
+    </properties>
+
+    <dependencies>
+        <!-- JavaFX 图形界面 -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-controls</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+        <!-- 音乐播放：Media/MediaPlayer（javafx-web 已移除，media 需显式引入） -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-media</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
+        <!-- JSON 解析（解析 version json / API 返回） -->
+        <dependency>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+            <version>${json.version}</version>
+        </dependency>
+        <!-- WebP 图标解码（Modrinth 部分项目图标是 WebP，JavaFX 21 不支持，需转 PNG 显示） -->
+        <dependency>
+            <groupId>com.github.gotson</groupId>
+            <artifactId>webp-imageio</artifactId>
+            <version>0.2.2</version>
+        </dependency>
+        <!-- ASM：给老 Forge/NeoForge 官方安装器打最小字节码补丁（预热解析失败返回空列表，规避 NPE） -->
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <version>9.5</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>JWH-Launcher</finalName>
+        <plugins>
+            <!-- 打包为带全部依赖的可执行 jar -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>com.jwh.launcher.Main</mainClass>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <!-- 阶段 B：大资源外置到 exe 同级 resources/，不打进 fat jar（开发态 classes 目录仍保留作兜底） -->
+                                        <exclude>music/**</exclude>
+                                        <exclude>relay/**</exclude>
+                                        <exclude>terracotta/**</exclude>
+                                        <exclude>neoform-*.jar</exclude>
+                                        <exclude>neoforge-*.jar</exclude>
+                                        <exclude>authlib-injector.jar</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

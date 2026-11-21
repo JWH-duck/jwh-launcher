@@ -1,0 +1,720 @@
+package com.jwh.launcher.update;
+
+import com.jwh.launcher.util.Http;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+
+/**
+ * 启动器自更新：检查「更新源 manifest」→ 发现新版本 → 下载 → 由更新脚本关闭本进程、
+ * 覆盖文件、重启新版本。
+ *
+ * <p>支持两种更新形态（manifest 里二选一，jar 优先）：
+ * <ul>
+ *   <li><b>jar 增量更新（阶段 A，推荐）</b>：只替换 {@code app/JWH-Launcher.jar}，
+ *       自带 JRE（runtime/）、exe、许可证等保持不动，玩家无需重下整包；</li>
+ *   <li><b>全量 zip 覆盖（兼容兜底）</b>：下载完整压缩包解压覆盖整个目录，
+ *       用于 jar 不兼容或首次大版本升级。</li>
+ * </ul>
+ *
+ * 更新源配置（二选一，作者无需重新打包）：
+ *  1) 启动器目录下放 update-url.txt，内容为 manifest 的完整直链（推荐）；
+ *  2) 未找到时使用内置默认地址。
+ *
+ * <p>manifest.json 格式（jar 增量 + 全量兜底可同时给出；每个包可用 {@code urls} 数组给
+ * 主源与兜底源，下载层按顺序自动换源；兼容旧的单 {@code url} 字段）：
+ * <pre>
+ * {
+ *   "version": "1.6.262",
+ *   "notes": "本次更新内容说明",
+ *   "jar": {
+ *     "urls": ["https://主源/.../JWH-Launcher-1.6.262.jar",
+ *              "https://gitee.com/命名空间/仓库/releases/download/latest/JWH-Launcher-1.6.262.jar"],
+ *     "size": 182744928,
+ *     "sha256": "ab12..."
+ *   },
+ *   "urls": ["https://主源/.../JWH-Launcher-v1.6.262.zip",
+ *            "https://gitee.com/命名空间/仓库/releases/download/latest/JWH-Launcher-v1.6.262.zip"],
+ *   "size": 236749887
+ * }
+ * </pre>
+ */
+public class Updater {
+
+    /** 内置默认更新源（占位；作者建好仓库后可在此固化，或玩家目录用 update-url.txt 覆盖）。 */
+    public static final String DEFAULT_MANIFEST_URL =
+            "https://gitee.com/jwh-launcher/jwh-launcher/releases/download/latest/manifest.json";
+
+    /** jpackage app-image 中主程序 jar 的固定相对路径（相对 exe 所在目录）。 */
+    public static final String MAIN_JAR_REL = "app/JWH-Launcher.jar";
+
+    /** 外置资源目录（相对 exe 所在目录），与 {@link com.jwh.launcher.util.Resources#EXTERNAL_DIR} 一致。 */
+    public static final String RESOURCES_DIR = com.jwh.launcher.util.Resources.EXTERNAL_DIR;
+
+    /** 本地已装资源层记录文件（位于外置资源根下）。 */
+    public static final String LAYERS_FILE = "layers.json";
+
+    /** 每层关键文件（相对外置资源根）；任一缺失即判定该层不完整、需重下。music 单独按目录非空判定。 */
+    private static final Map<String, String[]> LAYER_KEY_FILES = Map.ofEntries(
+            Map.entry("relay", new String[]{"relay/easytier-core.exe", "relay/Packet.dll", "relay/WinDivert64.sys", "relay/wintun.dll"}),
+            Map.entry("terracotta", new String[]{"terracotta/terracotta.exe", "terracotta/VCRUNTIME140.DLL"}),
+            Map.entry("neoform", new String[]{
+                    "neoform-1.21.1-20240808.144430-srg.jar",
+                    "neoform-1.21.1-20240808.144430-extra.jar",
+                    "neoform-1.21.4-20241203.161809-srg.jar",
+                    "neoform-1.21.4-20241203.161809-extra.jar"}),
+            Map.entry("neoforge", new String[]{
+                    "neoforge-21.4.161-client.jar",
+                    "neoforge-fallback-client.jar",
+                    "neoforge-fallback-universal.jar"}),
+            Map.entry("agent", new String[]{"authlib-injector.jar"})
+    );
+
+    /** 单个资源层描述。urls 为候选下载地址（主源在前，兜底源在后），按顺序由下载层自动换源。 */
+    public record LayerInfo(String name, String version, List<String> urls, long size, String sha256) {
+        public boolean hasUrl() {
+            return urls != null && !urls.isEmpty();
+        }
+
+        /** 首条地址（兼容旧调用）。 */
+        public String url() {
+            return hasUrl() ? urls.get(0) : "";
+        }
+    }
+
+    /** 全量包分卷描述。index 从 1 起，合并时按 index 升序拼接；urls 为候选源（主源在前）。 */
+    public record PartInfo(int index, String name, List<String> urls, long size, String sha256) {
+        public boolean hasUrl() {
+            return urls != null && !urls.isEmpty();
+        }
+
+        public String url() {
+            return hasUrl() ? urls.get(0) : "";
+        }
+    }
+
+    /** 新版本信息。layers 为本轮需要补齐/更新的资源层（可为空）；parts 为全量包分卷（可为空，空则用单包）。 */
+    public record UpdateInfo(String version, String notes, List<String> fullUrls, long fullSize,
+                             String fullSha256, List<String> jarUrls, long jarSize,
+                             String jarSha256, List<LayerInfo> layers, List<PartInfo> parts) {
+        /** 是否携带 jar 增量包。 */
+        public boolean hasJar() {
+            return jarUrls != null && !jarUrls.isEmpty();
+        }
+
+        /** 是否有需要下载的资源层。 */
+        public boolean hasLayers() {
+            return layers != null && !layers.isEmpty();
+        }
+
+        /** 是否为分卷全量包。 */
+        public boolean hasParts() {
+            return parts != null && !parts.isEmpty();
+        }
+
+        /** 全量包首条地址（兼容旧调用）。 */
+        public String url() {
+            return fullUrls == null || fullUrls.isEmpty() ? "" : fullUrls.get(0);
+        }
+
+        /** jar 包首条地址（兼容旧调用）。 */
+        public String jarUrl() {
+            return jarUrls == null || jarUrls.isEmpty() ? "" : jarUrls.get(0);
+        }
+
+        /** 全量包大小（兼容旧调用，等同 fullSize）。 */
+        public long size() {
+            return fullSize;
+        }
+    }
+
+    private final Path appDir;
+    private final String currentVersion;
+
+    public Updater(Path appDir, String currentVersion) {
+        this.appDir = appDir;
+        this.currentVersion = currentVersion;
+    }
+
+    /** 当前生效的更新源地址：update-url.txt 优先，其次内置默认。 */
+    public String manifestUrl() {
+        Path f = appDir.resolve("update-url.txt");
+        if (Files.isRegularFile(f)) {
+            try {
+                for (String line : Files.readAllLines(f, StandardCharsets.UTF_8)) {
+                    String t = line.trim();
+                    if (!t.isEmpty() && !t.startsWith("#")) return t;
+                }
+            } catch (IOException ignored) {
+            }
+        }
+        return DEFAULT_MANIFEST_URL;
+    }
+
+    /** 检查更新。返回 null 表示已是最新（或更新源不可用/格式异常）。异常向上抛由调用方提示。 */
+    public UpdateInfo check() throws Exception {
+        String body = Http.getText(manifestUrl());
+        JSONObject o = new JSONObject(body);
+        String v = o.optString("version", "").trim();
+        if (v.isEmpty() || compare(v, currentVersion) <= 0) return null;
+        String notes = o.optString("notes", "");
+
+        // 全量兜底包：优先 urls 数组（主源 + 兜底），兼容旧单 url 字段
+        List<String> fullUrls = parseUrls(o, "url", "urls");
+        long fullSize = o.optLong("size", 0);
+        String fullSha256 = o.optString("sha256", "").trim();
+
+        // jar 增量层（阶段 A）
+        List<String> jarUrls = List.of();
+        long jarSize = 0;
+        String jarSha256 = "";
+        JSONObject jar = o.optJSONObject("jar");
+        if (jar != null) {
+            jarUrls = parseUrls(jar, "url", "urls");
+            jarSize = jar.optLong("size", 0);
+            jarSha256 = jar.optString("sha256", "").trim();
+        }
+
+        List<LayerInfo> pending = filterPending(parseLayers(o));
+        List<PartInfo> parts = parseParts(o);
+
+        if (jarUrls.isEmpty() && fullUrls.isEmpty() && parts.isEmpty() && pending.isEmpty()) return null;
+        return new UpdateInfo(v, notes, fullUrls, fullSize, fullSha256, jarUrls, jarSize,
+                jarSha256, pending, parts);
+    }
+
+    /** 解析全量包分卷数组；按 index 升序返回。无该字段或格式异常时返回空表。 */
+    private static List<PartInfo> parseParts(JSONObject o) {
+        List<PartInfo> out = new ArrayList<>();
+        JSONArray arr = o.optJSONArray("parts");
+        if (arr == null) return out;
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject p = arr.optJSONObject(i);
+            if (p == null) continue;
+            List<String> urls = parseUrls(p, "url", "urls");
+            if (urls.isEmpty()) continue;
+            int index = p.optInt("index", i + 1);
+            String name = p.optString("name", "").trim();
+            if (name.isEmpty()) name = "part" + index;
+            out.add(new PartInfo(index, name, urls, p.optLong("size", 0),
+                    p.optString("sha256", "").trim()));
+        }
+        out.sort(Comparator.comparingInt(PartInfo::index));
+        return out;
+    }
+
+    /**
+     * 读取候选下载地址列表：优先 {@code arrayKey} 数组（按 manifest 给出的顺序，主源在前），
+     * 其次兼容旧的 {@code singleKey} 单字符串字段；去空、去重、保序。
+     */
+    private static List<String> parseUrls(JSONObject o, String singleKey, String arrayKey) {
+        List<String> out = new ArrayList<>();
+        JSONArray arr = o.optJSONArray(arrayKey);
+        if (arr != null) {
+            for (int i = 0; i < arr.length(); i++) {
+                String s = arr.optString(i, "").trim();
+                if (!s.isEmpty() && !out.contains(s)) out.add(s);
+            }
+        }
+        String single = o.optString(singleKey, "").trim();
+        if (!single.isEmpty() && !out.contains(single)) out.add(single);
+        return out;
+    }
+
+    /**
+     * 仅比对资源层：返回 manifest 中本地缺失、版本/哈希不符或关键文件丢失的层。
+     * 主程序已是最新时也可单独调用，后台补齐缺层（无需重启进程）。
+     */
+    public List<LayerInfo> pendingLayers() throws Exception {
+        String body = Http.getText(manifestUrl());
+        JSONObject o = new JSONObject(body);
+        return filterPending(parseLayers(o));
+    }
+
+    /** 解析 manifest 的 {@code layers} 数组；无该字段或格式异常时返回空表。 */
+    private static List<LayerInfo> parseLayers(JSONObject o) {
+        List<LayerInfo> out = new ArrayList<>();
+        JSONArray arr = o.optJSONArray("layers");
+        if (arr == null) return out;
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject l = arr.optJSONObject(i);
+            if (l == null) continue;
+            String name = l.optString("name", "").trim();
+            List<String> urls = parseUrls(l, "url", "urls");
+            if (name.isEmpty() || urls.isEmpty()) continue;
+            out.add(new LayerInfo(name,
+                    l.optString("version", "").trim(),
+                    urls,
+                    l.optLong("size", 0),
+                    l.optString("sha256", "").trim()));
+        }
+        return out;
+    }
+
+    /** 与本地 layers.json 及外置目录关键文件比对，筛出需要下载的层。 */
+    private List<LayerInfo> filterPending(List<LayerInfo> all) {
+        Map<String, JSONObject> local = readLocalLayers();
+        List<LayerInfo> out = new ArrayList<>();
+        for (LayerInfo layer : all) {
+            JSONObject saved = local.get(layer.name());
+            boolean versionChanged = saved == null
+                    || !layer.version().equals(saved.optString("version", ""))
+                    || !layer.sha256().equalsIgnoreCase(saved.optString("sha256", ""));
+            if (versionChanged || !keyFilesPresent(layer)) out.add(layer);
+        }
+        return out;
+    }
+
+    /** 外置资源根目录（exe 同级 resources/）。 */
+    private Path resourcesRoot() {
+        return appDir.resolve(RESOURCES_DIR);
+    }
+
+    /** 读取本地 layers.json；损坏或不存在时返回空表。 */
+    private Map<String, JSONObject> readLocalLayers() {
+        Map<String, JSONObject> out = new HashMap<>();
+        Path f = resourcesRoot().resolve(LAYERS_FILE);
+        if (!Files.isRegularFile(f)) return out;
+        try {
+            JSONObject o = new JSONObject(Files.readString(f, StandardCharsets.UTF_8));
+            for (String k : o.keySet()) {
+                JSONObject v = o.optJSONObject(k);
+                if (v != null) out.put(k, v);
+            }
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    /** 把本地层记录写回 layers.json。 */
+    private void writeLocalLayers(Map<String, JSONObject> local) {
+        try {
+            Path root = resourcesRoot();
+            Files.createDirectories(root);
+            Files.writeString(root.resolve(LAYERS_FILE), new JSONObject(local).toString(2), StandardCharsets.UTF_8);
+        } catch (IOException ignored) {
+        }
+    }
+
+    /** 该层关键文件是否都已在外置目录就位；无外置根（直跑/开发态）时不强制判定。 */
+    private boolean keyFilesPresent(LayerInfo layer) {
+        Path root = resourcesRoot();
+        if (!Files.isDirectory(root)) return false;
+        if ("music".equals(layer.name())) {
+            Path dir = root.resolve("music");
+            if (!Files.isDirectory(dir)) return false;
+            try (var s = Files.list(dir)) {
+                return s.anyMatch(p -> isAudio(p.getFileName().toString()));
+            } catch (IOException e) {
+                return false;
+            }
+        }
+        String[] keys = LAYER_KEY_FILES.get(layer.name());
+        if (keys == null) return true;
+        for (String k : keys) {
+            if (!Files.isRegularFile(root.resolve(k))) return false;
+        }
+        return true;
+    }
+
+    private static boolean isAudio(String name) {
+        String l = name.toLowerCase();
+        return l.endsWith(".mp3") || l.endsWith(".m4a") || l.endsWith(".aac") || l.endsWith(".wav");
+    }
+
+    /**
+     * 下载并补齐资源层：逐层校验大小/sha256 → 解压到外置资源根 → 更新 layers.json。
+     * 层资源在用到时才读取，补齐后无需重启进程；主版本更新流程会先调本方法再替换 jar。
+     */
+    public void applyLayers(List<LayerInfo> layers) throws Exception {
+        if (layers == null || layers.isEmpty()) return;
+        Path root = resourcesRoot();
+        Files.createDirectories(root);
+        Path tmp = appDir.resolve(".jwh-update");
+        Files.createDirectories(tmp);
+        Map<String, JSONObject> local = readLocalLayers();
+        for (LayerInfo layer : layers) {
+            if (layer.hasUrl()) applyOneLayer(layer, root, tmp, local);
+        }
+    }
+
+    /** 下载、校验、解压并登记单个资源层。 */
+    private void applyOneLayer(LayerInfo layer, Path root, Path tmp, Map<String, JSONObject> local) throws Exception {
+        Path zip = tmp.resolve("layer-" + layer.name() + "-" + layer.version() + ".zip");
+        boolean ok = com.jwh.launcher.download.Downloader.fetch(zip,
+                layer.size() > 0 ? layer.size() : -1,
+                com.jwh.launcher.download.ArtifactProbe.Kind.ZIP, "layer-" + layer.name(), null,
+                com.jwh.launcher.download.Downloader.Policy.of(60, 300),
+                layer.urls().toArray(new String[0]));
+        if (!ok) throw new IOException("资源层 " + layer.name() + " 下载失败，请检查网络后重试。");
+
+        if (layer.size() > 0) {
+            long actual = Files.size(zip);
+            if (actual != layer.size()) {
+                throw new IOException("资源层 " + layer.name() + " 大小不符（应为 " + layer.size()
+                        + " 字节，实际 " + actual + "），下载可能不完整。");
+            }
+        }
+        if (layer.sha256() != null && !layer.sha256().isBlank()) {
+            String actual = sha256Hex(zip);
+            if (!actual.equalsIgnoreCase(layer.sha256().trim())) {
+                throw new IOException("资源层 " + layer.name() + " 校验值不符，文件可能已损坏，已取消更新。");
+            }
+        }
+
+        Path extract = tmp.resolve("layer-" + layer.name() + "-" + layer.version());
+        unzipSafe(zip, extract);
+        copyTree(extract, root);
+
+        JSONObject saved = new JSONObject();
+        saved.put("version", layer.version());
+        saved.put("sha256", layer.sha256() == null ? "" : layer.sha256());
+        local.put(layer.name(), saved);
+        writeLocalLayers(local);
+
+        deleteQuietly(extract);
+        try { Files.deleteIfExists(zip); } catch (IOException ignored) { }
+    }
+
+    /** 递归复制解压目录到目标根（覆盖同名文件）。 */
+    private static void copyTree(Path src, Path dst) throws IOException {
+        try (var walk = Files.walk(src)) {
+            for (Path p : (Iterable<Path>) walk::iterator) {
+                if (p.equals(src)) continue;
+                Path target = dst.resolve(src.relativize(p).toString());
+                if (Files.isDirectory(p)) {
+                    Files.createDirectories(target);
+                } else {
+                    Files.createDirectories(target.getParent());
+                    Files.copy(p, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
+    }
+
+    /** 静默删除目录/文件（层临时目录清理用）。 */
+    private static void deleteQuietly(Path p) {
+        if (!Files.exists(p)) return;
+        try (var walk = Files.walk(p)) {
+            walk.sorted(java.util.Comparator.reverseOrder()).forEach(q -> {
+                try { Files.deleteIfExists(q); } catch (IOException ignored) { }
+            });
+        } catch (IOException ignored) {
+        }
+    }
+
+    /** 解压层包到 out，条目路径必须落在 out 内（防压缩包越界）。 */
+    private static void unzipSafe(Path zip, Path out) throws IOException {
+        deleteQuietly(out);
+        Files.createDirectories(out);
+        try (ZipFile zf = new ZipFile(zip.toFile())) {
+            Enumeration<? extends ZipEntry> en = zf.entries();
+            while (en.hasMoreElements()) {
+                ZipEntry e = en.nextElement();
+                Path target = out.resolve(e.getName()).normalize();
+                if (!target.startsWith(out.normalize())) {
+                    throw new IOException("资源层包含越界路径条目（" + e.getName() + "），已拒绝解压。");
+                }
+                if (e.isDirectory()) {
+                    Files.createDirectories(target);
+                    continue;
+                }
+                Files.createDirectories(target.getParent());
+                try (InputStream in = zf.getInputStream(e)) {
+                    Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
+    }
+
+    /**
+     * 下载并应用更新：优先 jar 增量替换主程序 jar；无 jar 层时回退全量 zip 覆盖。
+     * 校验通过后写更新脚本并启动，脚本关闭本进程后完成覆盖、清理临时文件并重启新版本。
+     */
+    public void downloadAndApply(UpdateInfo info) throws Exception {
+        Path tmp = appDir.resolve(".jwh-update");
+        Files.createDirectories(tmp);
+
+        // 先补齐/更新资源层（外置大文件），再替换程序 jar；层资源不被运行中的 jar 占用，可直接落盘。
+        if (info.hasLayers()) {
+            applyLayers(info.layers());
+        }
+
+        Path mainJar = appDir.resolve(MAIN_JAR_REL);
+        boolean packaged = Files.isRegularFile(mainJar);
+
+        if (info.hasJar()) {
+            // 打包环境（存在 app/JWH-Launcher.jar）才走 jar 增量；开发/直跑环境退回全量兜底。
+            if (packaged) {
+                applyJarUpdate(info, tmp, mainJar);
+                return;
+            }
+            // 直跑环境没有可覆盖的打包 jar：若 manifest 同时给了全量包（单包或分卷）则走全量，否则明确报错。
+            if (info.url().isEmpty() && !info.hasParts()) {
+                throw new IOException("当前为开发/直跑环境，缺少打包目录 " + MAIN_JAR_REL
+                        + "，无法执行 jar 增量更新；请发布全量包后再更新。");
+            }
+        }
+        if (info.url().isEmpty() && !info.hasParts()) {
+            throw new IOException("更新清单未提供可用的更新包地址。");
+        }
+        applyFullZipUpdate(info, tmp);
+    }
+
+    /** jar 增量：下载主程序 jar → 校验大小/sha256 → 启动替换脚本。 */
+    private void applyJarUpdate(UpdateInfo info, Path tmp, Path mainJar) throws Exception {
+        Path jar = tmp.resolve("update-" + info.version() + ".jar");
+        boolean ok = com.jwh.launcher.download.Downloader.fetch(jar,
+                info.jarSize() > 0 ? info.jarSize() : -1,
+                com.jwh.launcher.download.ArtifactProbe.Kind.JAR, "launcher-update-jar", null,
+                com.jwh.launcher.download.Downloader.Policy.of(60, 300),
+                info.jarUrls().toArray(new String[0]));
+        if (!ok) throw new IOException("程序 jar 下载失败，请检查网络后重试，或手动下载新版本覆盖。");
+
+        if (info.jarSize() > 0) {
+            long actual = Files.size(jar);
+            if (actual != info.jarSize()) {
+                throw new IOException("程序 jar 大小不符（应为 " + info.jarSize()
+                        + " 字节，实际 " + actual + "），下载可能不完整。");
+            }
+        }
+        if (info.jarSha256() != null && !info.jarSha256().isBlank()) {
+            String actual = sha256Hex(jar);
+            if (!actual.equalsIgnoreCase(info.jarSha256().trim())) {
+                throw new IOException("程序 jar 校验值不符，文件可能已损坏，已取消更新。");
+            }
+        }
+        launchJarUpdateScript(info.version(), tmp, mainJar);
+    }
+
+    /** 全量兜底：单包直接下载；分卷则逐卷下载校验后字节合并 → 结构/整体哈希校验 → 解压 → 覆盖脚本。 */
+    private void applyFullZipUpdate(UpdateInfo info, Path tmp) throws Exception {
+        Path zip;
+        if (info.hasParts()) {
+            zip = assembleParts(info, tmp);
+        } else {
+            zip = tmp.resolve("update-" + info.version() + ".zip");
+            boolean ok = com.jwh.launcher.download.Downloader.fetch(zip,
+                    info.size() > 0 ? info.size() : -1,
+                    com.jwh.launcher.download.ArtifactProbe.Kind.ZIP, "launcher-update", null,
+                    com.jwh.launcher.download.Downloader.Policy.of(60, 300),
+                    info.fullUrls().toArray(new String[0]));
+            if (!ok) throw new IOException("更新包下载失败，请检查网络后重试，或手动下载新版本覆盖。");
+            if (info.size() > 0) {
+                long actual = Files.size(zip);
+                if (actual != info.size()) {
+                    throw new IOException("更新包大小不符（应为 " + info.size() + " 字节，实际 " + actual + "），下载可能不完整。");
+                }
+            }
+        }
+
+        // 合并产物（及单包）统一做 ZIP 结构校验，避免错位拼接的伪包进入解压步骤。
+        com.jwh.launcher.download.ArtifactProbe.Verdict verdict =
+                com.jwh.launcher.download.ArtifactProbe.check(zip,
+                        com.jwh.launcher.download.ArtifactProbe.Kind.ZIP,
+                        info.size() > 0 ? info.size() : -1);
+        if (!verdict.ok()) {
+            throw new IOException("更新包结构校验失败（" + verdict.reason() + "），文件可能已损坏，已取消更新。");
+        }
+        if (info.fullSha256() != null && !info.fullSha256().isBlank()) {
+            if (!sha256Hex(zip).equalsIgnoreCase(info.fullSha256().trim())) {
+                throw new IOException("更新包整体校验值不符，文件可能已损坏，已取消更新。");
+            }
+        }
+        Path extract = tmp.resolve("extract-" + info.version());
+        unzip(zip, extract);
+        launchFullUpdateScript(info.version(), extract);
+    }
+
+    /** 逐卷下载、校验分卷大小/哈希，按 index 升序字节合并为完整 zip；合并后删除分卷释放空间。 */
+    private Path assembleParts(UpdateInfo info, Path tmp) throws Exception {
+        List<PartInfo> parts = info.parts();
+        Path partsDir = tmp.resolve("parts-" + info.version());
+        Files.createDirectories(partsDir);
+        Path merged = tmp.resolve("update-" + info.version() + ".zip");
+        long total = 0;
+        try (OutputStream out = Files.newOutputStream(merged,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+            for (PartInfo p : parts) {
+                Path partFile = partsDir.resolve(p.name());
+                boolean ok = com.jwh.launcher.download.Downloader.fetch(partFile,
+                        p.size() > 0 ? p.size() : -1,
+                        com.jwh.launcher.download.ArtifactProbe.Kind.BINARY,
+                        "full-part-" + p.index(), null,
+                        com.jwh.launcher.download.Downloader.Policy.of(60, 300),
+                        p.urls().toArray(new String[0]));
+                if (!ok) {
+                    throw new IOException("更新分卷 " + p.index() + "（" + p.name()
+                            + "）下载失败，请检查网络后重试。");
+                }
+                if (p.size() > 0 && Files.size(partFile) != p.size()) {
+                    throw new IOException("分卷 " + p.index() + " 大小不符（应为 " + p.size()
+                            + " 字节，实际 " + Files.size(partFile) + "），下载可能不完整。");
+                }
+                if (p.sha256() != null && !p.sha256().isBlank()) {
+                    if (!sha256Hex(partFile).equalsIgnoreCase(p.sha256().trim())) {
+                        throw new IOException("分卷 " + p.index() + " 校验值不符，文件可能已损坏，已取消更新。");
+                    }
+                }
+                Files.copy(partFile, out);
+                total += Files.size(partFile);
+                try { Files.deleteIfExists(partFile); } catch (IOException ignored) { }
+            }
+        }
+        if (info.size() > 0 && total != info.size()) {
+            throw new IOException("合并后大小不符（应为 " + info.size() + " 字节，实际 " + total + "）。");
+        }
+        return merged;
+    }
+
+    /**
+     * jar 替换脚本：关闭进程 → 备份旧 jar → 覆盖新 jar（失败自动回滚）→ 清理临时目录 → 重启。
+     * 脚本只用 ASCII（路径均相对本脚本目录，规避中文/GBK 乱码）。
+     */
+    private void launchJarUpdateScript(String version, Path tmp, Path mainJar) throws IOException {
+        Path script = appDir.resolve("jwh-update.bat");
+        Files.writeString(script, buildJarBat(version), StandardCharsets.UTF_8);
+        new ProcessBuilder("cmd.exe", "/c", "start", "", "/min", script.toAbsolutePath().toString()).start();
+    }
+
+    /** 生成 jar 增量替换脚本文本（抽成静态方法便于离线审查路径与命令，不启动进程）。 */
+    static String buildJarBat(String version) {
+        String relJar = MAIN_JAR_REL.replace('/', '\\');
+        String relNew = ".jwh-update\\update-" + version + ".jar";
+        String relPrev = ".jwh-update\\prev.jar";
+        return "@echo off\r\n"
+                + "cd /d \"%~dp0\"\r\n"
+                + "echo " + System.currentTimeMillis() + " jar-start > \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + "timeout /t 2 /nobreak >nul\r\n"
+                + "taskkill /f /im JWH-Launcher.exe >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + "timeout /t 1 /nobreak >nul\r\n"
+                + "copy /y /b \"" + relJar + "\" \"" + relPrev + "\" >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + "copy /y /b \"" + relNew + "\" \"" + relJar + "\" >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + "if errorlevel 1 (\r\n"
+                + "  echo ROLLBACK >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + "  copy /y /b \"" + relPrev + "\" \"" + relJar + "\" >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + "  rd /s /q \".jwh-update\" >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + "  start \"\" \"JWH-Launcher.exe\"\r\n"
+                + "  del \"%~f0\"\r\n"
+                + "  exit /b 1\r\n"
+                + ")\r\n"
+                + "rd /s /q \".jwh-update\" >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + "start \"\" \"JWH-Launcher.exe\"\r\n"
+                + "del \"%~f0\"\r\n";
+    }
+
+    /** 全量覆盖脚本：关闭进程 → 解压内容覆盖整目录 → 清理临时目录 → 重启。 */
+    private void launchFullUpdateScript(String version, Path extract) throws IOException {
+        Path script = appDir.resolve("jwh-update.bat");
+        Files.writeString(script, buildFullBat(version), StandardCharsets.UTF_8);
+        new ProcessBuilder("cmd.exe", "/c", "start", "", "/min", script.toAbsolutePath().toString()).start();
+    }
+
+    /** 生成全量覆盖脚本文本（抽成静态方法便于离线审查）。 */
+    static String buildFullBat(String version) {
+        return "@echo off\r\n"
+                + "cd /d \"%~dp0\"\r\n"
+                + "echo " + System.currentTimeMillis() + " start > \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + "timeout /t 2 /nobreak >nul\r\n"
+                + "taskkill /f /im JWH-Launcher.exe >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + "timeout /t 1 /nobreak >nul\r\n"
+                + "xcopy /e /y /q /h \".jwh-update\\extract-" + version + "\\*\" \".\" >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + "rd /s /q \".jwh-update\" >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + "start \"\" \"JWH-Launcher.exe\"\r\n"
+                + "del \"%~f0\"\r\n";
+    }
+
+    private static void unzip(Path zip, Path out) throws IOException {
+        if (Files.exists(out)) {
+            try (var walk = Files.walk(out)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (IOException ignored) {
+                    }
+                });
+            }
+        }
+        Files.createDirectories(out);
+        try (ZipFile zf = new ZipFile(zip.toFile())) {
+            Enumeration<? extends ZipEntry> en = zf.entries();
+            while (en.hasMoreElements()) {
+                ZipEntry e = en.nextElement();
+                Path target = out.resolve(e.getName());
+                if (e.isDirectory()) {
+                    Files.createDirectories(target);
+                    continue;
+                }
+                Files.createDirectories(target.getParent());
+                try (InputStream in = zf.getInputStream(e)) {
+                    Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
+    }
+
+    /** 计算文件 SHA-256，返回小写十六进制串。 */
+    private static String sha256Hex(Path p) throws IOException {
+        MessageDigest md;
+        try {
+            md = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IOException("SHA-256 摘要算法不可用", e);
+        }
+        try (InputStream in = Files.newInputStream(p)) {
+            byte[] buf = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buf)) > 0) md.update(buf, 0, n);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (byte b : md.digest()) sb.append(String.format("%02x", b));
+        return sb.toString();
+    }
+
+    /** 版本号比较：1.6.141 > 1.6.140；返回 a 与 b 的关系。 */
+    static int compare(String a, String b) {
+        String[] pa = a.split("\\.");
+        String[] pb = b.split("\\.");
+        int n = Math.max(pa.length, pb.length);
+        for (int i = 0; i < n; i++) {
+            String x = i < pa.length ? pa[i].trim() : "0";
+            String y = i < pb.length ? pb[i].trim() : "0";
+            long nx, ny;
+            try {
+                nx = Long.parseLong(x);
+            } catch (Exception e) {
+                nx = -1;
+            }
+            try {
+                ny = Long.parseLong(y);
+            } catch (Exception e) {
+                ny = -1;
+            }
+            if (nx >= 0 && ny >= 0) {
+                if (nx != ny) return nx < ny ? -1 : 1;
+            } else {
+                int c = x.compareTo(y);
+                if (c != 0) return c < 0 ? -1 : 1;
+            }
+        }
+        return 0;
+    }
+}
