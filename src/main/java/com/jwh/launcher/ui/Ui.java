@@ -407,4 +407,80 @@ public final class Ui {
         String v = field.getText() == null ? "" : field.getText().trim();
         return v.isEmpty() ? null : v;
     }
+
+    /** 进度对话框句柄：后台线程可安全更新状态文本，结束后关闭对话框。 */
+    public static final class ProgressHandle {
+        private final javafx.stage.Stage stage;
+        private final javafx.scene.control.Label label;
+
+        private ProgressHandle(javafx.stage.Stage stage, javafx.scene.control.Label label) {
+            this.stage = stage;
+            this.label = label;
+        }
+
+        /** 更新状态文本（线程安全，内部切回 FX 线程）。 */
+        public void setMessage(String msg) {
+            if (msg == null) return;
+            Platform.runLater(() -> label.setText(msg));
+        }
+
+        /** 关闭进度对话框（线程安全）。 */
+        public void close() {
+            Platform.runLater(stage::close);
+        }
+    }
+
+    /**
+     * 打开一个带不确定进度条的模态进度对话框（非阻塞等待），用于下载/更新等后台长任务。
+     * 任务在后台线程执行，进度文本通过返回的 {@link ProgressHandle#setMessage} 更新。
+     */
+    public static ProgressHandle progressDialog(String title, String message) {
+        javafx.stage.Stage stage = new javafx.stage.Stage(javafx.stage.StageStyle.UTILITY);
+        stage.setTitle(title);
+
+        javafx.scene.control.Label label = new javafx.scene.control.Label(message == null ? "" : message);
+        label.setWrapText(true);
+        label.setMaxWidth(430);
+        label.setStyle("-fx-text-fill:" + TEXT + "; -fx-font-size:13px;");
+
+        javafx.scene.control.ProgressBar bar = new javafx.scene.control.ProgressBar();
+        bar.setProgress(javafx.scene.control.ProgressBar.INDETERMINATE_PROGRESS);
+        bar.setPrefWidth(430);
+        bar.setStyle("-fx-accent:" + ACCENT + ";");
+
+        javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(12, label, bar);
+        box.setPadding(new javafx.geometry.Insets(20, 22, 20, 22));
+        box.setStyle("-fx-background-color:" + BG + ";");
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(box);
+        applyStylesheet(scene);
+        stage.setScene(scene);
+        stage.setResizable(false);
+        stage.initModality(javafx.stage.Modality.WINDOW_MODAL);
+
+        javafx.stage.Window owner = dialogOwner;
+        if (owner == null) {
+            for (javafx.stage.Window w : javafx.stage.Window.getWindows()) {
+                if (w instanceof javafx.stage.Stage s && s.isShowing()) {
+                    owner = w;
+                    break;
+                }
+            }
+        }
+        if (owner != null && owner.isShowing()) {
+            stage.initOwner(owner);
+        }
+        stage.setOnShown(ev -> {
+            try {
+                javafx.stage.Window o = stage.getOwner();
+                if (o != null) {
+                    stage.setX(o.getX() + (o.getWidth() - stage.getWidth()) / 2);
+                    stage.setY(o.getY() + (o.getHeight() - stage.getHeight()) / 2);
+                }
+            } catch (Exception ignored) {
+            }
+        });
+        stage.show();
+        return new ProgressHandle(stage, label);
+    }
 }

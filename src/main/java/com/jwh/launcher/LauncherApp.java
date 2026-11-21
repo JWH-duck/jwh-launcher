@@ -144,21 +144,40 @@ public class LauncherApp extends Application {
         }
     }
 
+    /** 更新流程是否正在进行：主更新与后台补层共用同一写目录，进行中禁止另起一条写流程。 */
+    private volatile boolean updating = false;
+
     /** 下载并应用更新：完成后自动重启启动器（供「关于」页手动检查与启动自动检查共用）。 */
     public void startUpdate(com.jwh.launcher.update.Updater.UpdateInfo info) {
-        Ui.asyncProgress(progress -> {
+        if (updating) return;
+        updating = true;
+        Ui.ProgressHandle progress = Ui.progressDialog("正在更新", "准备下载更新…");
+        Ui.asyncProgress(progressSink -> {
                     try {
-                        new com.jwh.launcher.update.Updater(appDir(), APP_VERSION).downloadAndApply(info);
+                        new com.jwh.launcher.update.Updater(appDir(), APP_VERSION)
+                                .onProgress(progressSink)
+                                .downloadAndApply(info);
                     } catch (Exception ex) {
-                        throw new RuntimeException(ex);
+                        updating = false;
+                        progress.close();
+                        // 保留根因 message 与 cause，避免被无 message 的包装异常吞掉真实报错。
+                        throw new RuntimeException(ex.getMessage(), ex);
                     }
                 },
-                progress -> setStatus(progress),
+                msg -> {
+                    setStatus(msg);
+                    progress.setMessage(msg);
+                },
                 ok -> {
+                    progress.close();
                     Ui.info("更新完成", "更新包已就绪，启动器将自动重启并完成更新。");
                     System.exit(0);
                 },
-                e -> Ui.error("更新失败", e));
+                e -> {
+                    updating = false;
+                    progress.close();
+                    Ui.error("更新失败", e);
+                });
     }
 
     private final StackPane content = new StackPane();
@@ -486,11 +505,15 @@ public class LauncherApp extends Application {
                 () -> new com.jwh.launcher.update.Updater(appDir(), APP_VERSION).pendingLayers(),
                 layers -> {
                     if (layers != null && !layers.isEmpty()) {
+                        // 主更新正在进行时跳过本轮补层，避免两条流程并发写同一临时目录与 layers.json。
+                        if (updating) return;
                         Ui.asyncProgress(progress -> {
                                     try {
-                                        new com.jwh.launcher.update.Updater(appDir(), APP_VERSION).applyLayers(layers);
+                                        new com.jwh.launcher.update.Updater(appDir(), APP_VERSION)
+                                                .onProgress(progress)
+                                                .applyLayers(layers);
                                     } catch (Exception ex) {
-                                        throw new RuntimeException(ex);
+                                        throw new RuntimeException(ex.getMessage(), ex);
                                     }
                                 },
                                 this::setStatus,
