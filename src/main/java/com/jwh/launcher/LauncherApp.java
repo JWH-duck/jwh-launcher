@@ -152,10 +152,13 @@ public class LauncherApp extends Application {
         if (updating) return;
         updating = true;
         Ui.ProgressHandle progress = Ui.progressDialog("正在更新", "准备下载更新…");
+        // 落地覆盖外置音乐前先松开播放器句柄，避免正在播放的 mp3 被占用导致覆盖失败。
+        releaseMusicAudio();
         Ui.asyncProgress(progressSink -> {
                     try {
                         new com.jwh.launcher.update.Updater(appDir(), APP_VERSION)
                                 .onProgress(progressSink)
+                                .onAudioRelease(this::releaseMusicAudio)
                                 .downloadAndApply(info);
                     } catch (Exception ex) {
                         updating = false;
@@ -199,6 +202,16 @@ public class LauncherApp extends Application {
     /** 顶栏音乐播放器（可能尚未构建，调用方自行判空）。 */
     public com.jwh.launcher.ui.MusicBar musicBar() {
         return musicBar;
+    }
+
+    /**
+     * 更新落地覆盖外置资源前调用：暂停并释放背景音乐解码器，松开正被占用的 mp3 句柄。
+     * 钩子在更新后台线程触发，操作播放器需切回 FX 线程。
+     */
+    private void releaseMusicAudio() {
+        if (musicBar != null) {
+            javafx.application.Platform.runLater(musicBar::releaseForUpdate);
+        }
     }
     private HomeView homeView;
     private DownloadView downloadView;
@@ -511,13 +524,17 @@ public class LauncherApp extends Application {
                                     try {
                                         new com.jwh.launcher.update.Updater(appDir(), APP_VERSION)
                                                 .onProgress(progress)
+                                                .onAudioRelease(this::releaseMusicAudio)
                                                 .applyLayers(layers);
                                     } catch (Exception ex) {
                                         throw new RuntimeException(ex.getMessage(), ex);
                                     }
                                 },
                                 this::setStatus,
-                                ok -> { },
+                                ok -> {
+                                    // 后台补层不重启进程：落地完成后重新随机播一首。
+                                    if (musicBar != null && musicBar.hasTracks()) musicBar.autoPlay();
+                                },
                                 e -> { /* 静默忽略补层失败，不影响使用 */ });
                     }
                 },

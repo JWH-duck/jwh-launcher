@@ -156,7 +156,23 @@ public final class Ui {
     }
 
     public static void error(String title, Exception e) {
-        error(title, e == null ? "未知错误" : e.getMessage());
+        error(title, describe(e));
+    }
+
+    /** 拼接异常类名、message 与根因链，避免弹窗只剩一句被截断的路径。 */
+    private static String describe(Throwable t) {
+        StringBuilder sb = new StringBuilder();
+        Throwable cur = t;
+        int depth = 0;
+        while (cur != null && depth < 6) {
+            if (depth > 0) sb.append("\n原因：");
+            sb.append(cur.getClass().getSimpleName());
+            String msg = cur.getMessage();
+            if (msg != null && !msg.isBlank()) sb.append(": ").append(msg);
+            cur = cur.getCause();
+            depth++;
+        }
+        return sb.toString().isBlank() ? "未知错误" : sb.toString();
     }
 
     /** 主窗口句柄：弹窗挂到它身上，避免弹窗跑到主窗后面/被当成“没反应”。 */
@@ -294,9 +310,15 @@ public final class Ui {
     }
 
     public static void error(String title, String msg) {
-        Alert a = new Alert(Alert.AlertType.ERROR, msg == null ? "" : msg, ButtonType.OK);
+        Alert a = new Alert(Alert.AlertType.ERROR, null, ButtonType.OK);
         a.setTitle(title);
         a.setHeaderText(title);
+        javafx.scene.control.Label body = new javafx.scene.control.Label(msg == null ? "" : msg);
+        body.setWrapText(true);
+        body.setMaxWidth(460);
+        body.setStyle("-fx-font-size:13px;");
+        a.getDialogPane().setContent(body);
+        a.getDialogPane().setPrefWidth(520);
         styleDialog(a);
         a.showAndWait();
     }

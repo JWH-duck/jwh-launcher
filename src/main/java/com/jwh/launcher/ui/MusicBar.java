@@ -268,6 +268,21 @@ public final class MusicBar extends VBox {
     }
 
     /**
+     * 更新落地前调用：停止并 dispose 解码器，松开对外置音频文件（resources/music/*.mp3）
+     * 的占用句柄。否则更新覆盖正在播放的那首 mp3 时，Windows 会以「文件正由另一进程使用」
+     * 拒绝覆盖，导致资源层更新失败。dispose 后 gstreamer 句柄是异步释放的，调用方落地文件
+     * 时需带短暂重试窗口。
+     */
+    public void releaseForUpdate() {
+        stopPlayer();
+    }
+
+    /** 更新落地结束后是否可以恢复播放。 */
+    public boolean hasTracks() {
+        return !tracks.isEmpty();
+    }
+
+    /**
      * 游戏退出、回到启动器时：不接着上次的位置续播，而是换一首随机的新曲从头开始，
      * 让每次开完游戏回来都是「重新放一遍」而不是「从半截继续」。
      */

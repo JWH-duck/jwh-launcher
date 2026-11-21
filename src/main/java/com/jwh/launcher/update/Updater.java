@@ -160,6 +160,8 @@ public class Updater {
     private final String currentVersion;
     /** 进度文本回调（可空）；后台线程上报，由界面层切回 FX 线程刷新。 */
     private Consumer<String> progressSink;
+    /** 落地资源文件前回调（可空）：由界面层注入，用于暂停并释放背景音乐解码器，松开外置 mp3 句柄。 */
+    private Runnable audioReleaseHook;
 
     public Updater(Path appDir, String currentVersion) {
         this.appDir = appDir;
@@ -170,6 +172,21 @@ public class Updater {
     public Updater onProgress(Consumer<String> sink) {
         this.progressSink = sink;
         return this;
+    }
+
+    /** 注入落地资源前的音频释放回调，返回本对象便于链式调用。 */
+    public Updater onAudioRelease(Runnable hook) {
+        this.audioReleaseHook = hook;
+        return this;
+    }
+
+    /** 落地覆盖资源文件前调用界面层释放背景音乐句柄；回调异常静默，不打断更新。 */
+    private void releaseAudio() {
+        if (audioReleaseHook == null) return;
+        try {
+            audioReleaseHook.run();
+        } catch (Exception ignored) {
+        }
     }
 
     private void report(String msg) {
@@ -461,6 +478,10 @@ public class Updater {
         report("正在解压资源层 " + layer.name() + "…");
         Path extract = tmp.resolve("layer-" + layer.name() + "-" + layer.version());
         unzipSafe(zip, extract);
+        // 覆盖落地前先暂停并释放背景音乐解码器，松开正被占用的外置 mp3；
+        // gstreamer 句柄异步释放，留一小段等待窗口，随后的复制再带占用重试兜底。
+        releaseAudio();
+        sleepQuietly(250);
         copyTree(extract, root);
 
         JSONObject saved = new JSONObject();
@@ -474,6 +495,10 @@ public class Updater {
         report("资源层 " + layer.name() + " 已就绪。");
     }
 
+    /** 单个文件覆盖：占用重试次数与间隔（等待解码器异步释放句柄）。 */
+    private static final int COPY_RETRIES = 6;
+    private static final long COPY_RETRY_MS = 250;
+
     /** 递归复制解压目录到目标根（覆盖同名文件）。 */
     private static void copyTree(Path src, Path dst) throws IOException {
         try (var walk = Files.walk(src)) {
@@ -484,9 +509,57 @@ public class Updater {
                     Files.createDirectories(target);
                 } else {
                     Files.createDirectories(target.getParent());
-                    Files.copy(p, target, StandardCopyOption.REPLACE_EXISTING);
+                    copyWithRetry(p, target);
                 }
             }
+        }
+    }
+
+    /**
+     * 先写到同目录临时文件再替换目标，避免半截内容覆盖旧文件；目标被占用（背景音乐解码器
+     * 句柄尚未释放）时按占用类异常有限次重试等待，仍失败才抛出带目标文件名的清晰错误。
+     */
+    private static void copyWithRetry(Path src, Path target) throws IOException {
+        IOException last = null;
+        for (int attempt = 0; attempt <= COPY_RETRIES; attempt++) {
+            Path tmp = target.resolveSibling(target.getFileName() + ".jwh-copy.tmp");
+            try {
+                Files.copy(src, tmp, StandardCopyOption.REPLACE_EXISTING);
+                try {
+                    Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING,
+                            StandardCopyOption.ATOMIC_MOVE);
+                } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                    Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+                return;
+            } catch (IOException e) {
+                deleteQuietly(tmp);
+                last = e;
+                if (attempt < COPY_RETRIES && isLockLike(e)) {
+                    sleepQuietly(COPY_RETRY_MS);
+                } else {
+                    break;
+                }
+            }
+        }
+        throw new IOException("无法写入文件 " + target + "：" + last.getMessage(), last);
+    }
+
+    /** 判断异常是否为 Windows 文件被占用 / 锁定（值得等待重试）。 */
+    private static boolean isLockLike(IOException e) {
+        String m = e.getMessage();
+        if (m == null) return false;
+        String low = m.toLowerCase();
+        return m.contains("另一进程") || m.contains("另一个程序") || m.contains("另一个进程")
+                || m.contains("being used") || low.contains("locked") || low.contains("sharing violation");
+    }
+
+    /** 静默睡眠；被中断时恢复中断标记并尽快返回。 */
+    private static void sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 
