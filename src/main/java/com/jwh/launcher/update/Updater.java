@@ -160,8 +160,22 @@ public class Updater {
     private final String currentVersion;
     /** 进度文本回调（可空）；后台线程上报，由界面层切回 FX 线程刷新。 */
     private Consumer<String> progressSink;
+    /** 进度数值回调（可空）：0..1 的确定进度，由界面层切回 FX 线程刷新进度条。 */
+    private Consumer<Double> progressNumSink;
     /** 落地资源文件前回调（可空）：由界面层注入，用于暂停并释放背景音乐解码器，松开外置 mp3 句柄。 */
     private Runnable audioReleaseHook;
+
+    /** 下载阶段占用的进度权重（解压/落地/校验占剩余部分）。 */
+    private static final double DOWNLOAD_WEIGHT = 0.85;
+    /** 本轮待下载字节总量（manifest 给出的各产物 size 之和）；<=0 表示大小未知，进度条回退不确定动画。 */
+    private long totalBytes;
+    /** 已下载完成的文件字节数（不含当前正在下载的文件）。 */
+    private long doneBytes;
+    /** 当前正在下载文件的起点累计字节（= 进入该文件时的 doneBytes）。 */
+    private long fileBaseBytes;
+    /** 资源层总数与已完成层数（用于落地阶段的细分进度）。 */
+    private int layerTotal;
+    private int layerDone;
 
     public Updater(Path appDir, String currentVersion) {
         this.appDir = appDir;
@@ -171,6 +185,12 @@ public class Updater {
     /** 注入进度文本回调，返回本对象便于链式调用。 */
     public Updater onProgress(Consumer<String> sink) {
         this.progressSink = sink;
+        return this;
+    }
+
+    /** 注入确定进度数值回调（0..1），返回本对象便于链式调用。 */
+    public Updater onProgressNumeric(Consumer<Double> sink) {
+        this.progressNumSink = sink;
         return this;
     }
 
@@ -197,12 +217,64 @@ public class Updater {
         }
     }
 
-    /** 字节进度控制：把下载累计字节换算成 MB 文本上报，不支持取消。 */
+    /** 上报确定进度值（可空回调；NaN 时界面回退不确定动画）。 */
+    private void reportNum(double frac) {
+        if (progressNumSink == null) return;
+        try {
+            progressNumSink.accept(frac);
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 同时上报进度值与状态文本。 */
+    private void report(double frac, String msg) {
+        reportNum(frac);
+        report(msg);
+    }
+
+    /** 汇总本轮待下载字节总量：资源层 + jar；无 jar 时按全量包/分卷合计。 */
+    private void initTotalBytes(UpdateInfo info) {
+        long t = 0;
+        if (info.layers() != null) {
+            for (LayerInfo l : info.layers()) t += Math.max(0, l.size());
+        }
+        if (info.hasJar()) {
+            t += Math.max(0, info.jarSize());
+        } else if (info.hasParts()) {
+            for (PartInfo p : info.parts()) t += Math.max(0, p.size());
+        } else {
+            t += Math.max(0, info.fullSize());
+        }
+        this.totalBytes = t;
+        this.doneBytes = 0;
+        this.layerDone = 0;
+    }
+
+    /** 进入一个文件下载：记录起点累计字节。 */
+    private void beginFile(long size) {
+        this.fileBaseBytes = this.doneBytes;
+    }
+
+    /** 文件下载成功后累加完成字节。 */
+    private void endFile(long size) {
+        this.doneBytes += Math.max(0, size);
+    }
+
+    /** 由当前全局已下字节换算下载段进度（0..DOWNLOAD_WEIGHT）；总量未知返回 NaN。 */
+    private double downloadFrac(long globalBytes) {
+        if (totalBytes <= 0) return Double.NaN;
+        double f = DOWNLOAD_WEIGHT * Math.min(1.0, (double) globalBytes / totalBytes);
+        return Math.max(0.0, Math.min(DOWNLOAD_WEIGHT, f));
+    }
+
+    /** 字节进度控制：把下载累计字节换算成 MB 文本与全局确定进度上报，不支持取消。 */
     private Http.DownloadControl byteControl(long expectedSize, String label) {
         return new Http.DownloadControl() {
             @Override
             public void onBytes(long bytes) {
-                report(label + " " + mb(bytes) + (expectedSize > 0 ? " / " + mb(expectedSize) : ""));
+                long global = fileBaseBytes + Math.max(0, bytes);
+                report(downloadFrac(global),
+                        label + " " + mb(bytes) + (expectedSize > 0 ? " / " + mb(expectedSize) : ""));
             }
 
             @Override
@@ -440,6 +512,7 @@ public class Updater {
             Files.createDirectories(tmp);
             cleanStaleLayers(tmp);
             Map<String, JSONObject> local = readLocalLayers();
+            this.layerTotal = layers.size();
             report("正在检查并更新资源层…");
             for (LayerInfo layer : layers) {
                 if (layer.hasUrl()) applyOneLayer(layer, root, tmp, local);
@@ -453,6 +526,7 @@ public class Updater {
     private void applyOneLayer(LayerInfo layer, Path root, Path tmp, Map<String, JSONObject> local) throws Exception {
         Path zip = tmp.resolve("layer-" + layer.name() + "-" + layer.version() + ".zip");
         report("正在更新资源层 " + layer.name() + "…");
+        beginFile(layer.size());
         boolean ok = com.jwh.launcher.download.Downloader.fetch(zip,
                 layer.size() > 0 ? layer.size() : -1,
                 com.jwh.launcher.download.ArtifactProbe.Kind.ZIP, "资源层 " + layer.name(),
@@ -474,6 +548,7 @@ public class Updater {
                 throw new IOException("资源层 " + layer.name() + " 校验值不符，文件可能已损坏，已取消更新。");
             }
         }
+        endFile(layer.size());
 
         report("正在解压资源层 " + layer.name() + "…");
         Path extract = tmp.resolve("layer-" + layer.name() + "-" + layer.version());
@@ -492,7 +567,9 @@ public class Updater {
 
         deleteQuietly(extract);
         try { Files.deleteIfExists(zip); } catch (IOException ignored) { }
-        report("资源层 " + layer.name() + " 已就绪。");
+        layerDone++;
+        double layerFrac = DOWNLOAD_WEIGHT + 0.05 * (layerTotal > 0 ? (double) layerDone / layerTotal : 1.0);
+        report(Math.min(0.90, layerFrac), "资源层 " + layer.name() + " 已就绪。");
     }
 
     /** 单个文件覆盖：占用重试次数与间隔（等待解码器异步释放句柄）。 */
@@ -625,6 +702,8 @@ public class Updater {
             Path tmp = appDir.resolve(".jwh-update");
             Files.createDirectories(tmp);
             cleanStaleLayers(tmp);
+            initTotalBytes(info);
+            report(downloadFrac(0), "正在准备更新…");
 
             // 先补齐/更新资源层（外置大文件），再替换程序 jar；层资源不被运行中的 jar 占用，可直接落盘。
             if (info.hasLayers()) {
@@ -659,6 +738,7 @@ public class Updater {
     private void applyJarUpdate(UpdateInfo info, Path tmp, Path mainJar) throws Exception {
         Path jar = tmp.resolve("update-" + info.version() + ".jar");
         report("正在下载启动器程序…");
+        beginFile(info.jarSize());
         boolean ok = com.jwh.launcher.download.Downloader.fetch(jar,
                 info.jarSize() > 0 ? info.jarSize() : -1,
                 com.jwh.launcher.download.ArtifactProbe.Kind.JAR, "启动器程序",
@@ -680,7 +760,9 @@ public class Updater {
                 throw new IOException("程序 jar 校验值不符，文件可能已损坏，已取消更新。");
             }
         }
-        report("校验通过，正在准备替换程序…");
+        endFile(info.jarSize());
+        report(0.95, "校验通过，正在准备替换程序…");
+        reportNum(1.0);
         launchJarUpdateScript(info.version(), tmp, mainJar);
     }
 
@@ -692,6 +774,7 @@ public class Updater {
         } else {
             zip = tmp.resolve("update-" + info.version() + ".zip");
             report("正在下载完整更新包…");
+            beginFile(info.size());
             boolean ok = com.jwh.launcher.download.Downloader.fetch(zip,
                     info.size() > 0 ? info.size() : -1,
                     com.jwh.launcher.download.ArtifactProbe.Kind.ZIP, "完整更新包",
@@ -705,6 +788,7 @@ public class Updater {
                     throw new IOException("更新包大小不符（应为 " + info.size() + " 字节，实际 " + actual + "），下载可能不完整。");
                 }
             }
+            endFile(info.size());
         }
 
         // 合并产物（及单包）统一做 ZIP 结构校验，避免错位拼接的伪包进入解压步骤。
@@ -721,7 +805,9 @@ public class Updater {
             }
         }
         Path extract = tmp.resolve("extract-" + info.version());
+        report(0.95, "正在解压更新包…");
         unzip(zip, extract);
+        reportNum(1.0);
         launchFullUpdateScript(info.version(), extract);
     }
 
@@ -738,6 +824,7 @@ public class Updater {
             for (PartInfo p : parts) {
                 Path partFile = partsDir.resolve(p.name());
                 report("正在下载更新分卷 " + p.index() + "/" + totalParts + "…");
+                beginFile(p.size());
                 boolean ok = com.jwh.launcher.download.Downloader.fetch(partFile,
                         p.size() > 0 ? p.size() : -1,
                         com.jwh.launcher.download.ArtifactProbe.Kind.BINARY,
@@ -758,6 +845,7 @@ public class Updater {
                         throw new IOException("分卷 " + p.index() + " 校验值不符，文件可能已损坏，已取消更新。");
                     }
                 }
+                endFile(p.size());
                 Files.copy(partFile, out);
                 total += Files.size(partFile);
                 try { Files.deleteIfExists(partFile); } catch (IOException ignored) { }

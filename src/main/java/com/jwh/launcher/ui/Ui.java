@@ -430,20 +430,38 @@ public final class Ui {
         return v.isEmpty() ? null : v;
     }
 
-    /** 进度对话框句柄：后台线程可安全更新状态文本，结束后关闭对话框。 */
+    /** 进度对话框句柄：后台线程可安全更新状态文本与进度值，结束后关闭对话框。 */
     public static final class ProgressHandle {
         private final javafx.stage.Stage stage;
         private final javafx.scene.control.Label label;
+        private final javafx.scene.control.ProgressBar bar;
 
-        private ProgressHandle(javafx.stage.Stage stage, javafx.scene.control.Label label) {
+        private ProgressHandle(javafx.stage.Stage stage, javafx.scene.control.Label label,
+                               javafx.scene.control.ProgressBar bar) {
             this.stage = stage;
             this.label = label;
+            this.bar = bar;
         }
 
         /** 更新状态文本（线程安全，内部切回 FX 线程）。 */
         public void setMessage(String msg) {
             if (msg == null) return;
             Platform.runLater(() -> label.setText(msg));
+        }
+
+        /**
+         * 更新确定进度值（线程安全，内部切回 FX 线程）。
+         * 传入 NaN 或负值时回退为不确定滚动动画；值按 0..1 截断。
+         */
+        public void setProgress(double v) {
+            Platform.runLater(() -> {
+                if (bar == null) return;
+                if (Double.isNaN(v) || v < 0) {
+                    bar.setProgress(javafx.scene.control.ProgressBar.INDETERMINATE_PROGRESS);
+                } else {
+                    bar.setProgress(Math.min(1.0, Math.max(0.0, v)));
+                }
+            });
         }
 
         /** 关闭进度对话框（线程安全）。 */
@@ -453,8 +471,9 @@ public final class Ui {
     }
 
     /**
-     * 打开一个带不确定进度条的模态进度对话框（非阻塞等待），用于下载/更新等后台长任务。
-     * 任务在后台线程执行，进度文本通过返回的 {@link ProgressHandle#setMessage} 更新。
+     * 打开一个带确定进度条的模态进度对话框（非阻塞等待），用于下载/更新等后台长任务。
+     * 任务在后台线程执行：状态文本通过 {@link ProgressHandle#setMessage} 更新，
+     * 进度值通过 {@link ProgressHandle#setProgress} 上报；未上报数值时进度条保持 0。
      */
     public static ProgressHandle progressDialog(String title, String message) {
         javafx.stage.Stage stage = new javafx.stage.Stage(javafx.stage.StageStyle.UTILITY);
@@ -466,7 +485,7 @@ public final class Ui {
         label.setStyle("-fx-text-fill:" + TEXT + "; -fx-font-size:13px;");
 
         javafx.scene.control.ProgressBar bar = new javafx.scene.control.ProgressBar();
-        bar.setProgress(javafx.scene.control.ProgressBar.INDETERMINATE_PROGRESS);
+        bar.setProgress(0.0);
         bar.setPrefWidth(430);
         bar.setStyle("-fx-accent:" + ACCENT + ";");
 
@@ -503,6 +522,6 @@ public final class Ui {
             }
         });
         stage.show();
-        return new ProgressHandle(stage, label);
+        return new ProgressHandle(stage, label, bar);
     }
 }

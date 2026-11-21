@@ -158,6 +158,7 @@ public class LauncherApp extends Application {
                     try {
                         new com.jwh.launcher.update.Updater(appDir(), APP_VERSION)
                                 .onProgress(progressSink)
+                                .onProgressNumeric(progress::setProgress)
                                 .onAudioRelease(this::releaseMusicAudio)
                                 .downloadAndApply(info);
                     } catch (Exception ex) {
