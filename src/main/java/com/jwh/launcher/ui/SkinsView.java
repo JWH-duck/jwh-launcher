@@ -505,7 +505,7 @@ public class SkinsView {
         } else if (acc != null && acc.type == LauncherConfig.Account.Type.LITTLESKIN) {
             tip = "游戏内显示以皮肤站账号皮肤为准；此处本地选图仅作预览。";
         } else {
-            tip = "先在「账号管理」里选中一个账号。";
+            tip = "未登录时将使用离线身份保存本地皮肤，选图即生效。";
         }
         this.setTip(tip);
         // 模型按钮 / 披风勾选按当前账号状态回显（切账号后不会停在上一个账号的选择）
@@ -620,12 +620,10 @@ public class SkinsView {
     }
 
     private void applySkin(Path from) {
-        LauncherConfig.Account acc = this.currentAccount();
-        if (acc == null) {
-            Ui.error("未选择账号", "请先在「账号管理」里选中一个账号。");
-            return;
-        }
+        // 未登录 / 未选中账号时也允许换肤：ensureAccount 会复用已有账号或自动补一个离线身份
+        LauncherConfig.Account acc = this.ensureAccount();
         if (acc.uuid == null || acc.uuid.isBlank()) {
+            Ui.error("切换皮肤失败", "当前账号缺少 UUID，无法写入本地皮肤。");
             return;
         }
         try {
@@ -680,6 +678,24 @@ public class SkinsView {
             return null;
         }
         return (LauncherConfig.Account)accounts.get(idx);
+    }
+
+    /**
+     * 取一个可写本地皮肤的账号：优先当前选中账号；没选中时复用列表里第一个；
+     * 一个账号都没有则自动补一个离线身份。保证未登录状态下也能进皮肤库选皮肤并生效，
+     * 不再要求必须先登录某个站点账号。
+     */
+    private LauncherConfig.Account ensureAccount() {
+        LauncherConfig.Account acc = this.currentAccount();
+        if (acc != null) {
+            return acc;
+        }
+        List<LauncherConfig.Account> accounts = this.app.config.accounts;
+        if (!accounts.isEmpty()) {
+            this.app.auth.selectAccount(0);
+            return accounts.get(0);
+        }
+        return this.app.auth.addOfflineAccount("Steve");
     }
 
     private Path libraryDir() {
