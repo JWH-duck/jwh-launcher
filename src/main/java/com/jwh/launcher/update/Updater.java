@@ -47,12 +47,12 @@ import java.util.zip.ZipFile;
  *   "notes": "本次更新内容说明",
  *   "jar": {
  *     "urls": ["https://主源/.../JWH-Launcher-1.6.262.jar",
- *              "https://gitee.com/命名空间/仓库/releases/download/latest/JWH-Launcher-1.6.262.jar"],
+ *              "https://gitee.com/JWH-Minecraft/jwh-launcher/releases/download/latest/JWH-Launcher-1.6.262.jar"],
  *     "size": 182744928,
  *     "sha256": "ab12..."
  *   },
  *   "urls": ["https://主源/.../JWH-Launcher-v1.6.262.zip",
- *            "https://gitee.com/命名空间/仓库/releases/download/latest/JWH-Launcher-v1.6.262.zip"],
+ *            "https://gitee.com/JWH-Minecraft/jwh-launcher/releases/download/latest/JWH-Launcher-v1.6.262.zip"],
  *   "size": 236749887
  * }
  * </pre>
@@ -61,7 +61,7 @@ public class Updater {
 
     /** 内置默认更新源（占位；作者建好仓库后可在此固化，或玩家目录用 update-url.txt 覆盖）。 */
     public static final String DEFAULT_MANIFEST_URL =
-            "https://gitee.com/jwh-launcher/jwh-launcher/releases/download/latest/manifest.json";
+            "https://gitee.com/JWH-Minecraft/jwh-launcher/releases/download/latest/manifest.json";
 
     /** jpackage app-image 中主程序 jar 的固定相对路径（相对 exe 所在目录）。 */
     public static final String MAIN_JAR_REL = "app/JWH-Launcher.jar";
