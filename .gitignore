@@ -34,3 +34,6 @@ config.json
 
 # ---- 源码备份残留 ----
 *.bak_*
+
+# ---- 版权音乐不进源码仓（走更新外置层分发，磁盘文件保留） ----
+/src/main/resources/music/
