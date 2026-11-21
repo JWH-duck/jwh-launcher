@@ -13,7 +13,8 @@
   源码双推（gitee / github）不在本脚本内，见 RELEASE.md「双推源码」一节。
 
 .PARAMETER Version
-  本次发布版本号，例如 1.0.0。必填。
+  本次发布版本号，例如 1.0.1。缺省时自动从工程根 pom.xml 的 <version> 解析（版本号单一来源），
+  一般无需手动传入；手动传入的值会被校验与 pom 一致，不一致即中止。
 
 .PARAMETER OutDir
   产物所在目录（打包脚本输出目录）。默认取本脚本上级目录的上级（即工程根的同级交付目录）。
@@ -47,7 +48,7 @@
 #>
 
 param(
-    [Parameter(Mandatory = $true)][string]$Version,
+    [string]$Version,
     [string]$OutDir,
     [string]$GiteeOwner = 'JWH-Minecraft',
     [string]$GiteeRepo  = 'jwh-launcher',
@@ -58,12 +59,31 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if (-not $Notes) { $Notes = "JWH-Launcher v$Version 更新清单" }
 
 # ---------- 路径推导 ----------
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projDir   = Split-Path -Parent $scriptDir
 if (-not $OutDir) { $OutDir = Split-Path -Parent $projDir }
+
+# ---------- 版本号：单一来源 pom.xml ----------
+function Read-PomVersion([string]$projRoot) {
+    $pom = Join-Path $projRoot 'pom.xml'
+    if (-not (Test-Path -LiteralPath $pom)) { throw "找不到 pom.xml：$pom" }
+    $text = [IO.File]::ReadAllText($pom)
+    $m = [regex]::Match($text, '<groupId>com\.jwh</groupId>\s*<artifactId>jwh-launcher</artifactId>\s*<version>\s*([^<\s]+)\s*</version>')
+    if (-not $m.Success) { throw "无法从 pom.xml 解析项目版本号" }
+    return $m.Groups[1].Value.Trim()
+}
+
+$pomVersion = Read-PomVersion $projDir
+if (-not $Version) {
+    $Version = $pomVersion
+} elseif ($Version.Trim() -ne $pomVersion) {
+    throw "版本号不一致：传入 -Version $Version，但 pom.xml 为 $pomVersion。请以 pom.xml 为准，不要手动覆盖。"
+}
+Write-Output "==> 发布版本 v$Version（来自 pom.xml）"
+
+if (-not $Notes) { $Notes = "JWH-Launcher v$Version 更新清单" }
 
 $giteeBase = "https://gitee.com/$GiteeOwner/$GiteeRepo/releases/download/latest/"
 

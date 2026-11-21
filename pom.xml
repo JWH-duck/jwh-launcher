@@ -6,7 +6,7 @@
 
     <groupId>com.jwh</groupId>
     <artifactId>jwh-launcher</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <packaging>jar</packaging>
 
     <name>JWH Launcher</name>
@@ -55,6 +55,26 @@
 
     <build>
         <finalName>JWH-Launcher</finalName>
+        <!--
+          资源过滤：只对 version.properties 做 ${project.version} 替换；其余资源（jar/png/music/relay 等）
+          关闭 filtering，避免二进制被占位符替换损坏。版本号单一来源即本 pom 的 <version>。
+        -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>version.properties</exclude>
+                </excludes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>version.properties</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <!-- 打包为带全部依赖的可执行 jar -->
             <plugin>
