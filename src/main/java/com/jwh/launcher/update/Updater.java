@@ -43,16 +43,16 @@ import java.util.zip.ZipFile;
  * 主源与兜底源，下载层按顺序自动换源；兼容旧的单 {@code url} 字段）：
  * <pre>
  * {
- *   "version": "1.6.262",
+ *   "version": "1.0.0",
  *   "notes": "本次更新内容说明",
  *   "jar": {
- *     "urls": ["https://主源/.../JWH-Launcher-1.6.262.jar",
- *              "https://gitee.com/JWH-Minecraft/jwh-launcher/releases/download/latest/JWH-Launcher-1.6.262.jar"],
+ *     "urls": ["https://主源/.../JWH-Launcher-1.0.0.jar",
+ *              "https://gitee.com/JWH-Minecraft/jwh-launcher/releases/download/latest/JWH-Launcher-1.0.0.jar"],
  *     "size": 182744928,
  *     "sha256": "ab12..."
  *   },
- *   "urls": ["https://主源/.../JWH-Launcher-v1.6.262.zip",
- *            "https://gitee.com/JWH-Minecraft/jwh-launcher/releases/download/latest/JWH-Launcher-v1.6.262.zip"],
+ *   "urls": ["https://主源/.../JWH-Launcher-v1.0.0.zip",
+ *            "https://gitee.com/JWH-Minecraft/jwh-launcher/releases/download/latest/JWH-Launcher-v1.0.0.zip"],
  *   "size": 236749887
  * }
  * </pre>

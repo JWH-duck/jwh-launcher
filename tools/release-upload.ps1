@@ -13,7 +13,7 @@
   源码双推（gitee / github）不在本脚本内，见 RELEASE.md「双推源码」一节。
 
 .PARAMETER Version
-  本次发布版本号，例如 1.6.264。必填。
+  本次发布版本号，例如 1.0.0。必填。
 
 .PARAMETER OutDir
   产物所在目录（打包脚本输出目录）。默认取本脚本上级目录的上级（即工程根的同级交付目录）。
@@ -38,12 +38,12 @@
 
 .EXAMPLE
   # 仅本地生成 manifest 并校验
-  .\tools\release-upload.ps1 -Version 1.6.264 -SkipUpload
+  .\tools\release-upload.ps1 -Version 1.0.0 -SkipUpload
 
 .EXAMPLE
   # 生成 manifest 并上传到 Gitee Release latest
   $env:GITEE_TOKEN='xxxxxxxx'
-  .\tools\release-upload.ps1 -Version 1.6.264
+  .\tools\release-upload.ps1 -Version 1.0.0
 #>
 
 param(

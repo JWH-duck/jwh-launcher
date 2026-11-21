@@ -44,7 +44,7 @@ public class LauncherApp extends Application {
 
     /** 应用版本号：打包时由 jpackage 注入 app-version，jar 直跑时兜底。 */
     public static final String APP_VERSION =
-            System.getProperty("jpackage.app-version", "1.6.0");
+            System.getProperty("jpackage.app-version", "1.0.0");
 
     /** 启动器所在目录（自更新文件、头像日志等落点）。打包后为 exe 所在目录，jar 直跑时为工作目录。 */
     public static java.nio.file.Path appDir() {

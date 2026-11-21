@@ -45,11 +45,11 @@ mvnw.cmd -o -q package -DskipTests
 ### 3.3 生成 manifest 并上传 Gitee
 ```powershell
 # 仅本地生成 manifest.json 并校验产物（不上传）
-.\tools\release-upload.ps1 -Version 1.6.264 -SkipUpload
+.\tools\release-upload.ps1 -Version 1.0.0 -SkipUpload
 
 # 生成 manifest 并上传到 Gitee Release latest
 $env:GITEE_TOKEN='<你的 Gitee 私人令牌>'
-.\tools\release-upload.ps1 -Version 1.6.264 -Notes "本次更新说明"
+.\tools\release-upload.ps1 -Version 1.0.0 -Notes "本次更新说明"
 ```
 `-Notes` 可选，写入 manifest 的更新说明；不传则用版本模板文案。
 脚本会逐项校验产物大小与 SHA-256，生成双源 `urls` 清单（`urls[0]` 主源占位、`urls[1]` Gitee 兜底），把 manifest 和全部更新包上传到标签 `latest`，并打印下载直链。
@@ -73,11 +73,11 @@ git push github main
 
 ```json
 {
-  "version": "1.6.264",
+  "version": "1.0.0",
   "notes": "更新说明",
   "jar": { "urls": ["<主源>", "<Gitee 兜底>"], "size": 0, "sha256": "..." },
   "layers": [
-    { "name": "relay", "version": "1.6.264", "urls": ["<主源>", "<Gitee 兜底>"], "size": 0, "sha256": "..." }
+    { "name": "relay", "version": "1.0.0", "urls": ["<主源>", "<Gitee 兜底>"], "size": 0, "sha256": "..." }
   ],
   "size": 0,
   "sha256": "...",
