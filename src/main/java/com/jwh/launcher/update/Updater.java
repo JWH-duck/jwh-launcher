@@ -761,9 +761,51 @@ public class Updater {
             }
         }
         endFile(info.jarSize());
+        // 同步刷新 jpackage 启动配置里记录的旧版本号，避免重启后 exe 仍按打包快照注入旧版本。
+        refreshPackageVersion(info.version());
         report(0.95, "校验通过，正在准备替换程序…");
         reportNum(1.0);
         launchJarUpdateScript(info.version(), tmp, mainJar);
+    }
+
+    /**
+     * jar 增量替换后，同步刷新 jpackage 启动配置里记录的旧版本号：
+     * {@code app/*.cfg} 的 {@code -Djpackage.app-version} 与 {@code app/.jpackage.xml} 的
+     * {@code <app-version>}。否则 exe 重启仍按打包快照注入旧版本系统属性，界面版本号与更新比对
+     * 停留在旧版，反复弹更新。文件缺失或未匹配到旧版本时静默跳过，不阻断 jar 替换主流程。
+     */
+    private void refreshPackageVersion(String version) {
+        if (version == null || version.isBlank()) return;
+        try {
+            Path app = appDir.resolve("app");
+            if (!Files.isDirectory(app)) return;
+
+            // 1. cfg：java-options=-Djpackage.app-version=1.0.4
+            try (var stream = Files.list(app)) {
+                for (Path cfg : (Iterable<Path>) stream::iterator) {
+                    String name = cfg.getFileName().toString();
+                    if (!Files.isRegularFile(cfg) || !name.endsWith(".cfg")) continue;
+                    String text = Files.readString(cfg, StandardCharsets.UTF_8);
+                    String updated = text.replaceAll("(-Djpackage\\.app-version=)\\S+", "$1" + version);
+                    if (!updated.equals(text)) {
+                        Files.writeString(cfg, updated, StandardCharsets.UTF_8);
+                    }
+                }
+            }
+
+            // 2. .jpackage.xml：<app-version>1.0.4</app-version>
+            Path xml = app.resolve(".jpackage.xml");
+            if (Files.isRegularFile(xml)) {
+                String text = Files.readString(xml, StandardCharsets.UTF_8);
+                String updated = text.replaceAll("(<app-version>)\\S+(</app-version>)",
+                        "$1" + version + "$2");
+                if (!updated.equals(text)) {
+                    Files.writeString(xml, updated, StandardCharsets.UTF_8);
+                }
+            }
+        } catch (Exception ignored) {
+            // 配置刷新失败不回滚 jar 替换；版本号仍可由主 jar 内 version.properties 兜底。
+        }
     }
 
     /** 全量兜底：单包直接下载；分卷则逐卷下载校验后字节合并 → 结构/整体哈希校验 → 解压 → 覆盖脚本。 */
