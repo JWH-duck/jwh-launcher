@@ -27,11 +27,14 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -1452,11 +1455,11 @@ public class LauncherApp extends Application {
         backBtn.setManaged(false);
         backBtn.setOnAction(e -> goBack());
 
-        Button home = navButton("主页");
+        Button home = navButton("主页", "/icons/nav_home.png");
         homeNavBtn = home;
         home.setOnAction(e -> showHome());
 
-        Button download = navButton("下载中心");
+        Button download = navButton("下载中心", "/icons/nav_download.png");
         downloadNavBtn = download;
         download.setOnAction(e -> {
             exitSub();
@@ -1469,11 +1472,11 @@ public class LauncherApp extends Application {
         });
 
         // 皮肤库：就在「下载中心」下面，独立页面（左侧预览 + 右侧皮肤列表）
-        Button skins = navButton("皮肤库");
+        Button skins = navButton("皮肤库", "/icons/nav_skin.png");
         skinsNavBtn = skins;
         skins.setOnAction(e -> showSkins());
 
-        Button settings = navButton("设置");
+        Button settings = navButton("设置", "/icons/nav_settings.png");
         settings.setOnAction(e -> {
             exitSub();
             hideFullPage();
@@ -1483,7 +1486,7 @@ public class LauncherApp extends Application {
         });
         setSettingsNavBtn(settings);
 
-        Button log = navButton("日志");
+        Button log = navButton("日志", "/icons/nav_log.png");
         log.setOnAction(e -> {
             exitSub();
             hideFullPage();
@@ -1492,7 +1495,7 @@ public class LauncherApp extends Application {
             setStatus("日志");
         });
 
-        Button about = navButton("关于");
+        Button about = navButton("关于", "/icons/nav_about.png");
         about.setOnAction(e -> {
             exitSub();
             hideFullPage();
@@ -1524,9 +1527,23 @@ public class LauncherApp extends Application {
     }
 
     private Button navButton(String text) {
+        return navButton(text, null);
+    }
+
+    private Button navButton(String text, String iconRes) {
         Button b = new Button(text);
         b.setMaxWidth(Double.MAX_VALUE);
         b.getStyleClass().add("nav-btn");
+        if (iconRes != null) {
+            InputStream is = getClass().getResourceAsStream(iconRes);
+            if (is != null) {
+                ImageView iv = new ImageView(new Image(is));
+                iv.setFitWidth(18);
+                iv.setFitHeight(18);
+                iv.setPreserveRatio(true);
+                b.setGraphic(iv);
+            }
+        }
         navButtons.add(b);
         return b;
     }

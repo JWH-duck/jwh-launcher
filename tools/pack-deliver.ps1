@@ -37,6 +37,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# 补回 System32（部分运行环境 PATH 中 %SystemRoot% 未展开，导致 robocopy 等系统命令找不到）
+$env:Path = "C:\Windows\System32;" + $env:Path
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 Add-Type -AssemblyName System.IO.Compression
 

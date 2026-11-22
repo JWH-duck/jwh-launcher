@@ -10,6 +10,7 @@
     -fx-padding: 10 14;
     -fx-background-radius: 8;
     -fx-cursor: hand;
+    -fx-graphic-text-gap: 8;
 }
 .nav-btn:hover {
     -fx-background-color: rgba(63, 169, 245, 0.10);
