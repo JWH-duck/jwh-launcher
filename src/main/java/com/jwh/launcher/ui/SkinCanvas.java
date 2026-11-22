@@ -36,17 +36,27 @@ public class SkinCanvas extends Canvas {
     /** 皮肤纹理边长（现代格式固定 64×64）。 */
     private static final int TEX = 64;
 
-    /**
-     * 反伽马亮度查找表，对标 skinview3d 标准材质的 sRGB→线性→光照→sRGB 链路：
-     * 暗部（深棕/黑斑）被曲线抬升、不压成死黑，亮部封顶，纯黑保持 0——环境光乘 albedo，
-     * 不叠加固定灰底（实测官方纯黑渲染为 0，固定灰底会把深色头发抬成灰块）。
-     */
-    private static final int[] GAMMA_LUT = buildGammaLut();
+    /** 实测锚点：输入 albedo 灰度 → 官方输出灰度（须先于 LIGHT_LUT 初始化）。 */
+    private static final int[] ANCHOR_IN = {0, 36, 72, 108, 144, 180, 216, 255};
+    private static final int[] ANCHOR_OUT = {0, 103, 142, 170, 194, 214, 232, 250};
 
-    private static int[] buildGammaLut() {
+    /**
+     * 亮度查找表：直接取自本地 skinview3d 官方渲染的实测 albedo→输出锚点（正面视角），
+     * 线性插值覆盖 0..255。官方 ColorManagement 关闭、无色调映射，标准材质在强环境光下
+     * 呈"暗部抬升、亮部微压"的非线性曲线；用实测锚点拟合，避免理论伽马把中间调过度抬亮抬灰。
+     * 纯黑保持 0，纯白压到 250；肤色/深棕采样误差 ≤2。
+     */
+    private static final int[] LIGHT_LUT = buildLightLut();
+
+    private static int[] buildLightLut() {
         int[] lut = new int[256];
         for (int a = 0; a < 256; a++) {
-            double v = 255.0 * Math.pow(a / 255.0, 0.44);
+            int k = 0;
+            while (k < ANCHOR_IN.length - 2 && a > ANCHOR_IN[k + 1]) k++;
+            int i0 = ANCHOR_IN[k], i1 = ANCHOR_IN[k + 1];
+            int o0 = ANCHOR_OUT[k], o1 = ANCHOR_OUT[k + 1];
+            double t = i1 == i0 ? 0 : (double) (a - i0) / (i1 - i0);
+            double v = o0 + t * (o1 - o0);
             lut[a] = v > 255 ? 255 : (int) Math.round(v);
         }
         return lut;
@@ -849,8 +859,10 @@ public class SkinCanvas extends Canvas {
             double nz2 = fny * sinX + nz1 * cosX;
             double lambert = Math.max(0, nx1 * lx + ny1 * ly + nz2 * lz);
             // 对标 skinview3d 标准材质：环境光乘 albedo（纯黑仍是黑，不叠加固定灰底），
-            // 方向光只提供轻微的面间明暗区分；暗部抬升交给 GAMMA_LUT 反伽马曲线。
-            double L = 0.92 + 0.10 * lambert;
+            // 方向光只提供轻微的面间明暗区分；暗部抬升/亮部封顶交给实测 LIGHT_LUT。
+            // LUT 锚点取自正面受光状态；正面法线对光源 lambert≈0.55，此处把正面 L 校准到 1.00，
+            // 背光面轻微压到 0.95，不额外提亮正面。
+            double L = 0.95 + 0.09 * lambert;
             // 外层贴皮（帽子/外套/袖套/裤腿）只画朝相机的一面：背对相机的板背面若仍光栅化，
             // 会从壳缝、轮廓棱上把正面颜色（发帘/肤色）漏到斜后视角。法线已随顶点旋到 nz2，
             // 按旋转后朝向判定，转头/摆臂不会错判丢面；披风是双层兜底结构，不参与剔除。
@@ -967,9 +979,9 @@ public class SkinCanvas extends Canvas {
                     if (argb == 0) continue;
                 }
 
-                int r = (int) (GAMMA_LUT[(argb >> 16) & 0xFF] * L);
-                int g = (int) (GAMMA_LUT[(argb >> 8) & 0xFF] * L);
-                int b = (int) (GAMMA_LUT[argb & 0xFF] * L);
+                int r = (int) (LIGHT_LUT[(argb >> 16) & 0xFF] * L);
+                int g = (int) (LIGHT_LUT[(argb >> 8) & 0xFF] * L);
+                int b = (int) (LIGHT_LUT[argb & 0xFF] * L);
                 if (r > 255) r = 255;
                 if (g > 255) g = 255;
                 if (b > 255) b = 255;
