@@ -36,6 +36,22 @@ public class SkinCanvas extends Canvas {
     /** 皮肤纹理边长（现代格式固定 64×64）。 */
     private static final int TEX = 64;
 
+    /**
+     * 反伽马亮度查找表，对标 skinview3d 标准材质的 sRGB→线性→光照→sRGB 链路：
+     * 暗部（深棕/黑斑）被曲线抬升、不压成死黑，亮部封顶，纯黑保持 0——环境光乘 albedo，
+     * 不叠加固定灰底（实测官方纯黑渲染为 0，固定灰底会把深色头发抬成灰块）。
+     */
+    private static final int[] GAMMA_LUT = buildGammaLut();
+
+    private static int[] buildGammaLut() {
+        int[] lut = new int[256];
+        for (int a = 0; a < 256; a++) {
+            double v = 255.0 * Math.pow(a / 255.0, 0.44);
+            lut[a] = v > 255 ? 255 : (int) Math.round(v);
+        }
+        return lut;
+    }
+
     /** 一个可绘制面：模型空间 4 顶点 + 纹理矩形 + 法线 + 所属部件。 */
     private static final class Face {
         double[] p = new double[12];
@@ -351,8 +367,10 @@ public class SkinCanvas extends Canvas {
         // slim 只收窄模型，贴图 UV 区仍是 4 像素宽，两者不能混用
         int armW = slim ? 3 : 4;
         if (slim) {
-            addSlimArm(2, -4 - armW, 12, -2, armW, 12, 4, 44, 16, false);
-            addSlimArm(3, 4, 12, -2, armW, 12, 4, 36, 48, false);
+            // 细手臂贴图区域角与经典一致：右臂 (40,16)、左臂 (32,48)；
+            // addSlimArm 的 u 是"右面"列起点，不能传成前面角，否则整组 UV 横移、侧面采到透明列。
+            addSlimArm(2, -4 - armW, 12, -2, armW, 12, 4, 40, 16, false);
+            addSlimArm(3, 4, 12, -2, armW, 12, 4, 32, 48, false);
         } else {
             addBox(2, -4 - armW, 12, -2, armW, 12, 4, 40, 16, 4, 12, 4, false);
             addBox(3, 4, 12, -2, armW, 12, 4, 32, 48, 4, 12, 4, false);
@@ -362,17 +380,22 @@ public class SkinCanvas extends Canvas {
         addBox(5, 0, 0, -2, 4, 12, 4, 16, 48, 4, 12, 4, false);
 
         // 外皮肤层（比内层大一圈；UV 展开仍按内层尺寸，贴图才不错位）
-        imageLayer(1, -4.5, 23.5, -4.5, 9, 9, 9, 32, 0, 8, 8, 8);
-        imageLayer(0, -4.5, 11.5, -2.5, 9, 13, 5, 16, 32, 8, 12, 4);
+        // 外层壳与内层同心外扩 0.5：内层头 y[16,24]，外层 9 高应 y[15.5,24.5]，
+        // 顶面要高过内层头顶，斜视角才出得来帽子两侧/后侧的方块凸起轮廓。
+        imageLayer(1, -4.5, 24.5, -4.5, 9, 9, 9, 32, 0, 8, 8, 8);
+        // 外层与内层同心外扩 0.5：内层身 y[0,12]，外层 13 高应 y[-0.5,12.5]。
+        imageLayer(0, -4.5, 12.5, -2.5, 9, 13, 5, 16, 32, 8, 12, 4);
         if (slim) {
-            if (hasOpaque(40, 28, 16, 20)) addSlimArm(2, -4.5 - armW, 11.5, -2.5, armW + 1, 13, 5, 40, 32, true);
-            if (hasOpaque(48, 44, 16, 20)) addSlimArm(3, 3.5, 11.5, -2.5, armW + 1, 13, 5, 48, 48, true);
+            if (hasOpaque(40, 28, 16, 20)) addSlimArm(2, -4.5 - armW, 12.5, -2.5, armW + 1, 13, 5, 40, 32, true);
+            if (hasOpaque(48, 44, 16, 20)) addSlimArm(3, 3.5, 12.5, -2.5, armW + 1, 13, 5, 48, 48, true);
         } else {
-            imageLayer(2, -4.5 - armW, 11.5, -2.5, armW + 1, 13, 5, 40, 32, 4, 12, 4);
-            imageLayer(3, 3.5, 11.5, -2.5, armW + 1, 13, 5, 48, 48, 4, 12, 4);
+            imageLayer(2, -4.5 - armW, 12.5, -2.5, armW + 1, 13, 5, 40, 32, 4, 12, 4);
+            imageLayer(3, 3.5, 12.5, -2.5, armW + 1, 13, 5, 48, 48, 4, 12, 4);
         }
-        imageLayer(4, -4.5, -0.5, -2.5, 5, 13, 5, 0, 32, 4, 12, 4);
-        imageLayer(5, -0.5, -0.5, -2.5, 5, 13, 5, 0, 48, 4, 12, 4);
+        // 外层腿与内层同心：内层腿 y[-12,0]，外层 13 高应 y[-12.5,0.5]。
+        imageLayer(4, -4.5, 0.5, -2.5, 5, 13, 5, 0, 32, 4, 12, 4);
+        // 外层左腿（裤腿层）区域角与内层左腿一致 (16,48)，不能写成 (0,48)，否则贴到右腿区域。
+        imageLayer(5, -0.5, 0.5, -2.5, 5, 13, 5, 16, 48, 4, 12, 4);
 
         // 披风：背后一块 10×16 的布，顶上贴身、下摆略往外张（和 MC 里垂着的样子一致）
         if (capePx != null) addCape();
@@ -825,8 +848,14 @@ public class SkinCanvas extends Canvas {
             double ny1 = fny * cosX - nz1 * sinX;
             double nz2 = fny * sinX + nz1 * cosX;
             double lambert = Math.max(0, nx1 * lx + ny1 * ly + nz2 * lz);
-            double bright = 0.72 + 0.30 * lambert;
-            rasterFace(f, bright);
+            // 对标 skinview3d 标准材质：环境光乘 albedo（纯黑仍是黑，不叠加固定灰底），
+            // 方向光只提供轻微的面间明暗区分；暗部抬升交给 GAMMA_LUT 反伽马曲线。
+            double L = 0.92 + 0.10 * lambert;
+            // 外层贴皮（帽子/外套/袖套/裤腿）只画朝相机的一面：背对相机的板背面若仍光栅化，
+            // 会从壳缝、轮廓棱上把正面颜色（发帘/肤色）漏到斜后视角。法线已随顶点旋到 nz2，
+            // 按旋转后朝向判定，转头/摆臂不会错判丢面；披风是双层兜底结构，不参与剔除。
+            if (f.outer && !f.cape && nz2 < 0.0) continue;
+            rasterFace(f, L);
         }
 
         outPw.setPixels(0, 0, bufW, bufH, PixelFormat.getIntArgbInstance(), buf, 0, bufW);
@@ -871,7 +900,7 @@ public class SkinCanvas extends Canvas {
      * <p>屏幕点 p(s,t) = p0 + s·(p1-p0) + t·(p3-p0)，s∈[0,1] 对应纹理横向，t 对应纵向；
      * 正交投影下 (s,t) 与屏幕坐标是线性关系，可逐像素反解出纹理坐标与深度。
      */
-    private void rasterFace(Face f, double bright) {
+    private void rasterFace(Face f, double L) {
         // 用副本做外扩：绝不能改 f.sx/f.sy 本体，否则动画每帧都会在旧值上再推 0.6px，
         // 几十帧后面就被"吹"变形（脸部贴图错位、边角支棱就是这么来的）。
         double[] sx = {f.sx[0], f.sx[1], f.sx[2], f.sx[3]};
@@ -938,9 +967,9 @@ public class SkinCanvas extends Canvas {
                     if (argb == 0) continue;
                 }
 
-                int r = (int) (((argb >> 16) & 0xFF) * bright);
-                int g = (int) (((argb >> 8) & 0xFF) * bright);
-                int b = (int) ((argb & 0xFF) * bright);
+                int r = (int) (GAMMA_LUT[(argb >> 16) & 0xFF] * L);
+                int g = (int) (GAMMA_LUT[(argb >> 8) & 0xFF] * L);
+                int b = (int) (GAMMA_LUT[argb & 0xFF] * L);
                 if (r > 255) r = 255;
                 if (g > 255) g = 255;
                 if (b > 255) b = 255;
