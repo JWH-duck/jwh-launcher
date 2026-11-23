@@ -226,8 +226,8 @@ public class ModrinthTab {
     private VBox cardNode(ModrinthApi.Hit h) {
         VBox card = new VBox(8);
         card.setPadding(new Insets(10));
-        card.setStyle("-fx-background-color:rgba(255,255,255,0.75); -fx-background-radius:10; -fx-border-radius:10;"
-                + "-fx-border-color:#e1e4e8; -fx-border-width:1;");
+        card.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:10; -fx-border-radius:10;"
+                + "-fx-border-color:" + Ui.BORDER + "; -fx-border-width:1;");
         card.setMinWidth(0);
         card.setMaxWidth(Double.MAX_VALUE);
         card.setCursor(Cursor.HAND);
@@ -498,7 +498,7 @@ public class ModrinthTab {
         page.setPadding(new Insets(20));
         // 与下载中心同款圆角面板（同色垫层铺满，圆角外不露窗口底色）
         page.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-background-radius:20; -fx-background-insets:0;"
-                + "-fx-border-radius:20; -fx-border-color:rgba(31,35,40,0.18);");
+                + "-fx-border-radius:20; -fx-border-color:" + Ui.BORDER + ";");
 
         // 顶部：目标图标 + 名称 + 下载量，右上角「返回」
         javafx.scene.image.ImageView icon = new javafx.scene.image.ImageView(Ui.GRASS_BLOCK);
@@ -544,7 +544,7 @@ public class ModrinthTab {
 
         // 目标实例：来自实例管理里已有的游戏版本与加载器
         Label sec = new Label("目标实例（游戏版本 + 加载器）");
-        sec.setStyle("-fx-font-size:14px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT_DIM + ";");
+        sec.setStyle("-fx-font-size:14px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT + ";");
         ComboBox<String> targetBox = new ComboBox<>();
         targetBox.setPrefWidth(460);
         targetBox.setPromptText("实例管理中的游戏版本");
@@ -568,7 +568,7 @@ public class ModrinthTab {
 
         // 下载版本：直接铺成列表（像 Mod 下载列表一样），只列与所选实例（游戏版本 + 加载器）都匹配的版本
         Label verSec = new Label("下载版本（仅显示与所选实例匹配的版本）");
-        verSec.setStyle("-fx-font-size:14px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT_DIM + ";");
+        verSec.setStyle("-fx-font-size:14px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT + ";");
         // 当前筛选用的游戏版本/加载器：列表行只显示这一项，避免长串撑出横向滚动条
         final String[] curMc = {null};
         final String[] curLd = {null};
@@ -577,7 +577,7 @@ public class ModrinthTab {
         verList.setMaxWidth(Double.MAX_VALUE);
         verList.setDisable(true);
         verList.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-background-radius:12;"
-                + "-fx-border-radius:12; -fx-border-color:rgba(31,35,40,0.14);");
+                + "-fx-border-radius:12; -fx-border-color:" + Ui.BORDER + ";");
         verList.setCellFactory(lv -> new ListCell<ModrinthApi.Version>() {
             @Override
             protected void updateItem(ModrinthApi.Version v, boolean empty) {

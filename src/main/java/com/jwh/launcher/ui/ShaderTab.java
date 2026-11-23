@@ -141,7 +141,7 @@ public class ShaderTab {
         note.setEditable(false);
         note.setWrapText(true);
         note.setPrefHeight(120);
-        note.setStyle("-fx-control-inner-background:" + Ui.BG_LIGHT + "; -fx-text-fill:#1f2328; -fx-font-family:Consolas,monospace; -fx-font-size:13px;");
+        note.setStyle("-fx-control-inner-background:" + Ui.BG_LIGHT + "; -fx-text-fill:" + Ui.TEXT + "; -fx-font-family:Consolas,monospace; -fx-font-size:13px;");
         note.setText("使用说明\n"
                 + "· 方案 A（Iris）：你的版本需为 Fabric 或 NeoForge 加载器版本（先到\"加载器\"页安装），装好后\n"
                 + "  再到\"光影包\"页搜索下载光影包（放入 shaderpacks 目录），游戏内光影设置选择即可。\n"

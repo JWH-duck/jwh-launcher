@@ -1,10 +1,20 @@
-/* JWH Launcher 全局样式（白色默认主题） */
+/* JWH Launcher 全局样式（深色主题；文字 / 控件由 Ui.DARK 统一反色） */
 .root {
     -fx-font-size: 14px;
+    -fx-base: #26282d;
+    -fx-background: #26282d;
+    -fx-control-inner-background: rgba(40, 46, 56, 0.72);
+    -fx-text-background-color: #e8eaed;
+    -fx-text-fill: #e8eaed;
 }
+
+.label {
+    -fx-text-fill: #e8eaed;
+}
+
 .nav-btn {
     -fx-background-color: transparent;
-    -fx-text-fill: #4b5563;
+    -fx-text-fill: #c9ccd1;
     -fx-alignment: CENTER_LEFT;
     -fx-font-size: 15px;
     -fx-padding: 10 14;
@@ -13,15 +23,15 @@
     -fx-graphic-text-gap: 8;
 }
 .nav-btn:hover {
-    -fx-background-color: rgba(63, 169, 245, 0.10);
-    -fx-text-fill: #111827;
+    -fx-background-color: rgba(63, 169, 245, 0.12);
+    -fx-text-fill: #ffffff;
 }
 .nav-btn:pressed {
-    -fx-background-color: rgba(63, 169, 245, 0.20);
+    -fx-background-color: rgba(63, 169, 245, 0.22);
 }
 .nav-btn.active {
-    -fx-background-color: rgba(63, 169, 245, 0.18);
-    -fx-text-fill: #0a6ec4;
+    -fx-background-color: rgba(63, 169, 245, 0.20);
+    -fx-text-fill: #7cc4f7;
     -fx-font-weight: bold;
 }
 
@@ -40,51 +50,53 @@
 }
 
 .ghost-btn {
-    -fx-background-color: rgba(0, 0, 0, 0.05);
-    -fx-text-fill: #1f2328;
+    -fx-background-color: rgba(255, 255, 255, 0.08);
+    -fx-text-fill: #e8eaed;
     -fx-background-radius: 6;
+    -fx-border-color: rgba(255, 255, 255, 0.14);
+    -fx-border-radius: 6;
     -fx-cursor: hand;
 }
 .ghost-btn:hover {
-    -fx-background-color: rgba(0, 0, 0, 0.10);
+    -fx-background-color: rgba(255, 255, 255, 0.14);
 }
 
 .danger-btn {
     -fx-background-color: transparent;
-    -fx-text-fill: #d64545;
+    -fx-text-fill: #ef6b6b;
     -fx-cursor: hand;
 }
 .danger-btn:hover {
-    -fx-text-fill: #b93333;
+    -fx-text-fill: #ff8a8a;
     -fx-underline: true;
 }
 
 .card {
-    -fx-background-color: rgba(255, 255, 255, 0.75);
+    -fx-background-color: rgba(30, 35, 44, 0.66);
     -fx-background-radius: 10;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.10), 10, 0, 0, 2);
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.30), 10, 0, 0, 2);
 }
 
 .section-title {
     -fx-font-size: 16px;
     -fx-font-weight: bold;
-    -fx-text-fill: #1f2328;
+    -fx-text-fill: #e8eaed;
 }
 
 .list-view {
-    -fx-background-color: rgba(255, 255, 255, 0.75);
+    -fx-background-color: rgba(30, 35, 44, 0.66);
     -fx-background-radius: 8;
-    -fx-border-color: #dfe3e8;
+    -fx-border-color: rgba(255, 255, 255, 0.14);
     -fx-border-radius: 8;
     -fx-padding: 2;
 }
 .list-cell {
     -fx-background-color: transparent;
-    -fx-text-fill: #1f2328;
+    -fx-text-fill: #e8eaed;
     -fx-padding: 8 12;
 }
 .list-cell:filled:hover {
-    -fx-background-color: rgba(63, 169, 245, 0.08);
+    -fx-background-color: rgba(63, 169, 245, 0.10);
 }
 .list-cell:filled:selected {
     -fx-background-color: #3FA9F5;
@@ -92,22 +104,28 @@
 }
 
 .text-field, .combo-box, .combo-box .list-cell {
-    -fx-background-color: rgba(255, 255, 255, 0.75);
-    -fx-text-fill: #1f2328;
+    -fx-background-color: rgba(40, 46, 56, 0.72);
+    -fx-text-fill: #e8eaed;
     -fx-background-radius: 6;
-    -fx-border-color: #d7dbe0;
+    -fx-border-color: rgba(255, 255, 255, 0.14);
     -fx-border-radius: 6;
 }
 .text-field:focused {
     -fx-border-color: #3FA9F5;
     -fx-border-radius: 6;
 }
+.text-field .text {
+    -fx-text-fill: #e8eaed;
+}
+.combo-box .arrow-button .arrow {
+    -fx-background-color: #b9bfc7;
+}
 
 .scroll-bar:vertical, .scroll-bar:horizontal {
     -fx-background-color: transparent;
 }
 .scroll-bar .thumb {
-    -fx-background-color: rgba(0, 0, 0, 0.22);
+    -fx-background-color: rgba(255, 255, 255, 0.22);
     -fx-background-radius: 4;
 }
 .scroll-bar .track {
@@ -119,7 +137,7 @@
 }
 
 .tab-pane .tab-header-background {
-    -fx-background-color: #e9ebee;
+    -fx-background-color: rgba(20, 24, 30, 0.72);
     -fx-background-insets: 0;
 }
 .tab-pane .tab {
@@ -131,7 +149,7 @@
     -fx-cursor: hand;
 }
 .tab-pane .tab:hover {
-    -fx-background-color: rgba(0, 0, 0, 0.05);
+    -fx-background-color: rgba(255, 255, 255, 0.06);
     -fx-background-insets: 0;
     -fx-border-color: transparent;
     -fx-border-width: 0;
@@ -144,51 +162,44 @@
     -fx-border-width: 0;
 }
 .tab-pane .tab .tab-label {
-    -fx-text-fill: #4b5563;
+    -fx-text-fill: #c9ccd1;
 }
 .tab-pane .tab:selected .tab-label {
-    -fx-text-fill: #0a6ec4;
+    -fx-text-fill: #7cc4f7;
     -fx-font-weight: bold;
 }
 
 .web-view {
-    -fx-background-color: #ffffff;
+    -fx-background-color: #26282d;
 }
 
-/* ===== 全局浅色兜底：修复白底黑字 / 白字白底看不清 ===== */
-.root {
-    -fx-base: #f5f6f8;
-    -fx-background: #f5f6f8;
-    -fx-control-inner-background: rgba(255, 255, 255, 0.75);
-    -fx-text-background-color: #1f2328;
-    -fx-text-fill: #1f2328;
-}
-
-.label {
-    -fx-text-fill: #1f2328;
-}
-
+/* ===== 通用控件深色兜底 ===== */
 .button {
-    -fx-background-color: rgba(255, 255, 255, 0.75);
-    -fx-text-fill: #1f2328;
+    -fx-background-color: rgba(40, 46, 56, 0.72);
+    -fx-text-fill: #e8eaed;
     -fx-background-radius: 6;
-    -fx-border-color: #d7dbe0;
+    -fx-border-color: rgba(255, 255, 255, 0.14);
     -fx-border-radius: 6;
     -fx-cursor: hand;
 }
 .button:hover {
-    -fx-background-color: rgba(238, 240, 243, 0.85);
+    -fx-background-color: rgba(255, 255, 255, 0.12);
 }
 .button:pressed {
-    -fx-background-color: rgba(226, 229, 233, 0.90);
+    -fx-background-color: rgba(255, 255, 255, 0.16);
+}
+.button:disabled {
+    -fx-background-color: rgba(40, 46, 56, 0.45);
+    -fx-text-fill: #b9bfc7;
+    -fx-border-color: rgba(255, 255, 255, 0.08);
 }
 
 .check-box {
-    -fx-text-fill: #1f2328;
+    -fx-text-fill: #e8eaed;
 }
 .check-box .box {
-    -fx-background-color: #ffffff;
-    -fx-border-color: #b9bfc7;
+    -fx-background-color: rgba(40, 46, 56, 0.72);
+    -fx-border-color: rgba(255, 255, 255, 0.28);
     -fx-border-radius: 3;
 }
 .check-box:selected .mark {
@@ -196,31 +207,32 @@
 }
 
 .spinner {
-    -fx-background-color: #ffffff;
+    -fx-background-color: rgba(40, 46, 56, 0.72);
 }
 .spinner .text-field {
-    -fx-background-color: #ffffff;
-    -fx-text-fill: #1f2328;
+    -fx-background-color: rgba(40, 46, 56, 0.72);
+    -fx-text-fill: #e8eaed;
 }
 .spinner .increment-arrow-button,
 .spinner .decrement-arrow-button {
-    -fx-background-color: #e9ebee;
+    -fx-background-color: rgba(255, 255, 255, 0.08);
 }
 .spinner .increment-arrow-button:hover,
 .spinner .decrement-arrow-button:hover {
-    -fx-background-color: #dfe3e8;
+    -fx-background-color: rgba(255, 255, 255, 0.16);
 }
 
 .combo-box-popup .list-view {
-    -fx-background-color: #ffffff;
+    -fx-background-color: rgba(30, 35, 44, 0.96);
     -fx-background-radius: 6;
+    -fx-border-color: rgba(255, 255, 255, 0.14);
 }
 .combo-box-popup .list-cell {
     -fx-background-color: transparent;
-    -fx-text-fill: #1f2328;
+    -fx-text-fill: #e8eaed;
 }
 .combo-box-popup .list-cell:hover {
-    -fx-background-color: rgba(63, 169, 245, 0.10);
+    -fx-background-color: rgba(63, 169, 245, 0.12);
 }
 .combo-box-popup .list-cell:filled:selected {
     -fx-background-color: #3FA9F5;
@@ -228,13 +240,16 @@
 }
 
 .text-area {
-    -fx-control-inner-background: #ffffff;
-    -fx-text-fill: #1f2328;
+    -fx-control-inner-background: rgba(30, 35, 44, 0.66);
+    -fx-text-fill: #e8eaed;
+}
+.text-area .content {
+    -fx-background-color: rgba(30, 35, 44, 0.66);
 }
 
 .tooltip {
-    -fx-background-color: #ffffff;
-    -fx-text-fill: #1f2328;
+    -fx-background-color: rgba(30, 35, 44, 0.95);
+    -fx-text-fill: #e8eaed;
     -fx-background-radius: 6;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.15), 8, 0, 0, 2);
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 8, 0, 0, 2);
 }

@@ -11,6 +11,7 @@ import com.jwh.launcher.download.ModpackInstaller;
 import com.jwh.launcher.ui.DownloadView;
 import com.jwh.launcher.ui.HomeView;
 import com.jwh.launcher.ui.AboutView;
+import com.jwh.launcher.ui.AnimatedBackground;
 import com.jwh.launcher.ui.LogView;
 import com.jwh.launcher.ui.LoginView;
 import com.jwh.launcher.ui.MultiplayerView;
@@ -193,6 +194,12 @@ public class LauncherApp extends Application {
     private final Label statusLabel = new Label("就绪");
     /** 主窗口根布局（背景随自定义主题刷新）。 */
     private BorderPane root;
+    /** 最外层堆叠：内置动态背景层（最底） + 根布局 + 全页覆盖层。 */
+    private StackPane shell;
+    /** 外壳圆角裁剪矩形（随窗口尺寸自适应）。 */
+    private javafx.scene.shape.Rectangle shellClip;
+    /** 内置动态背景（默认模式启用，图片 / 透明模式移除并停止动画）。 */
+    private AnimatedBackground animatedBg;
     /** 主窗口（透明模式下用于无边框拖动 / 最小化 / 关闭）。 */
     private Stage stage;
     private double dragX, dragY;
@@ -354,9 +361,8 @@ public class LauncherApp extends Application {
         }));
         plan.add(new BootStep("正在应用主题与界面样式…", 0.45, () -> {
             transparentWindow = "transparent".equals(config.bgMode);
-            if (transparentWindow) {
-                stage.initStyle(StageStyle.TRANSPARENT);
-            }
+            // 两种模式均用透明窗口：窗口内自绘标题栏，并由外壳圆角裁剪出圆角窗口
+            stage.initStyle(StageStyle.TRANSPARENT);
             Ui.applyTheme(config);
             // 信息提示改走窗口内 toast（不弹窗），错误与危险确认仍用弹窗
             Ui.toastSink = this::showToast;
@@ -714,10 +720,10 @@ public class LauncherApp extends Application {
 
     private Scene buildScene(Stage stage) {
         root = new BorderPane();
-        root.setStyle(bgStyle());
+        root.setStyle(rootBgStyle());
 
         // 顶栏：图标 + 标题 + 账号
-        HBox top = buildTopBar(stage);
+        javafx.scene.Node top = buildTopBar(stage);
         root.setTop(top);
 
         // 左侧导航
@@ -737,7 +743,7 @@ public class LauncherApp extends Application {
         aboutView = null;
         gameLog.setEditable(false);
         gameLog.setWrapText(true);
-        gameLog.setStyle("-fx-control-inner-background:" + Ui.BG_LIGHT + "; -fx-text-fill:#1f2328; -fx-font-family:Consolas,monospace; -fx-font-size:13px;");
+        gameLog.setStyle("-fx-control-inner-background:" + Ui.BG_LIGHT + "; -fx-text-fill:" + Ui.TEXT + "; -fx-font-family:Consolas,monospace; -fx-font-size:13px;");
         content.getChildren().add(homeView.root());
         root.setCenter(content);
 
@@ -754,7 +760,18 @@ public class LauncherApp extends Application {
         // 全页详情覆盖层叠在整窗之上：页面打开时顶栏/左导航/状态栏全部被覆盖
         pageLayer.setVisible(false);
         pageLayer.setPickOnBounds(true);
-        StackPane shell = new StackPane(root, pageLayer);
+        shell = new StackPane();
+        applyShellStyle();
+        // 圆角裁剪：把背景层 / 根布局 / 覆盖层统一裁成圆角窗口
+        shellClip = new javafx.scene.shape.Rectangle();
+        shellClip.setArcWidth(24);
+        shellClip.setArcHeight(24);
+        shellClip.widthProperty().bind(shell.widthProperty());
+        shellClip.heightProperty().bind(shell.heightProperty());
+        shell.setClip(shellClip);
+        // 最底层动态背景仅在主页挂载；再叠根布局与全页覆盖层
+        refreshPageBackground();
+        shell.getChildren().addAll(root, pageLayer);
         Scene scene = new Scene(shell);
         // 整合包拖入导入（与 PCL 一致：把 .zip/.jar/.mrpack 拖进窗口即触发）
         enablePackDrop(scene);
@@ -840,23 +857,13 @@ public class LauncherApp extends Application {
         }, err -> Ui.error("导入整合包失败", err));
     }
 
-    private HBox buildTopBar(Stage stage) {
+    private javafx.scene.Node buildTopBar(Stage stage) {
         HBox top = new HBox(12);
         top.setPadding(new Insets(10, 16, 10, 16));
         top.setAlignment(Pos.CENTER_LEFT);
         top.setStyle("-fx-background-color:" + Ui.BG_LIGHT + ";");
-
-        // 透明（无边框）模式下：顶栏可拖动窗口
-        if (stage != null && "transparent".equals(config.bgMode)) {
-            top.setOnMousePressed(e -> {
-                dragX = e.getScreenX() - stage.getX();
-                dragY = e.getScreenY() - stage.getY();
-            });
-            top.setOnMouseDragged(e -> {
-                stage.setX(e.getScreenX() - dragX);
-                stage.setY(e.getScreenY() - dragY);
-            });
-        }
+        // framed=true：去系统边框、窗口内自绘标题栏；false：透明壁纸模式，功能栏即顶栏
+        boolean framed = stage != null && !"transparent".equals(config.bgMode);
 
         // 左上角：玩家头像 + ID + 登录类型（整块可点击，点击进入账号管理/登录页）
         avatarView.setFitWidth(48);
@@ -896,29 +903,174 @@ public class LauncherApp extends Application {
         HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
         // 右上角：内置音乐播放器（原这里显示版本号，版本号已按需求去掉；
         // 版本信息仍可在窗口标题与「关于」页看到）
-        musicBar = new com.jwh.launcher.ui.MusicBar(true);
-        musicBar.setMinWidth(0);
-        musicBar.setPrefWidth(238);
-        musicBar.setMaxWidth(238);
+        // 右上角：内置音乐播放器。播放器实例必须全局只建一次：buildTopBar 在主题重建时会被
+        // 反复调用，若这里每次都 new，旧 MusicBar 持有的 MediaPlayer 不会被释放，会在后台
+        // 继续叠加播放，而界面上的新实例暂停不到旧播放器，表现为「好几首同时响、暂停没反应」。
+        if (musicBar == null) {
+            musicBar = new com.jwh.launcher.ui.MusicBar(true);
+            musicBar.setMinWidth(0);
+            musicBar.setPrefWidth(238);
+            musicBar.setMaxWidth(238);
+            // 打开启动器就随机放一首；点「启动游戏」时会自动暂停（见 HomeView.launch）
+            javafx.application.Platform.runLater(musicBar::autoPlay);
+        }
         top.getChildren().addAll(spacer, musicBar);
-        // 打开启动器就随机放一首；点「启动游戏」时会自动暂停（见 HomeView.launch）
-        javafx.application.Platform.runLater(musicBar::autoPlay);
 
-        // 透明（无边框）模式下补最小化 / 关闭按钮
-        if (stage != null && "transparent".equals(config.bgMode)) {
-            Button minBtn = new Button("—");
-            minBtn.setStyle("-fx-background-color:transparent; -fx-text-fill:" + Ui.TEXT + "; -fx-font-size:15px; -fx-padding:2 8; -fx-cursor:hand;");
+        if (!framed) {
+            // 透明壁纸模式：功能栏即顶栏，可拖动，最小化 / 关闭按钮挂右侧
+            top.setOnMousePressed(e -> {
+                dragX = e.getScreenX() - stage.getX();
+                dragY = e.getScreenY() - stage.getY();
+            });
+            top.setOnMouseDragged(e -> {
+                stage.setX(e.getScreenX() - dragX);
+                stage.setY(e.getScreenY() - dragY);
+            });
+            Button minBtn = frameShapeButton(minGlyph());
             minBtn.setOnAction(e -> stage.setIconified(true));
-            Button closeBtn = new Button("✕");
-            closeBtn.setStyle("-fx-background-color:transparent; -fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:14px; -fx-padding:2 8; -fx-cursor:hand;");
-            closeBtn.setOnMouseEntered(e -> closeBtn.setStyle("-fx-background-color:#e5484d; -fx-text-fill:white; -fx-font-size:14px; -fx-padding:2 8; -fx-cursor:hand; -fx-background-radius:5;"));
-            closeBtn.setOnMouseExited(e -> closeBtn.setStyle("-fx-background-color:transparent; -fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:14px; -fx-padding:2 8; -fx-cursor:hand;"));
+            Button closeBtn = frameCloseShapeButton();
             closeBtn.setOnAction(e -> stage.close());
             top.getChildren().addAll(minBtn, closeBtn);
+            refreshAccountButton();
+            return top;
         }
 
+        // 自绘深灰标题栏：标题 + 弹性占位 + 最小化 / 最大化 / 关闭
+        HBox titleBar = new HBox(8);
+        titleBar.setPadding(new Insets(6, 10, 6, 12));
+        titleBar.setAlignment(Pos.CENTER_LEFT);
+        titleBar.setStyle("-fx-background-color:#26282d;");
+        Label title = new Label("JWH Launcher - Minecraft 启动器 v" + APP_VERSION);
+        title.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
+        HBox titleSpacer = new HBox();
+        HBox.setHgrow(titleSpacer, javafx.scene.layout.Priority.ALWAYS);
+
+        Button minBtn = frameShapeButton(minGlyph());
+        minBtn.setOnAction(e -> stage.setIconified(true));
+        Button maxBtn = frameShapeButton(maxGlyph(false));
+        maxBtn.setOnAction(e -> {
+            boolean now = !stage.isMaximized();
+            stage.setMaximized(now);
+            maxBtn.setGraphic(maxGlyph(now));
+        });
+        Button closeBtn = frameCloseShapeButton();
+        closeBtn.setOnAction(e -> stage.close());
+        titleBar.getChildren().addAll(title, titleSpacer, minBtn, maxBtn, closeBtn);
+
+        // 标题栏拖动窗口；最大化时不响应拖拽；双击切换最大化 / 还原
+        titleBar.setOnMousePressed(e -> {
+            if (!stage.isMaximized()) {
+                dragX = e.getScreenX() - stage.getX();
+                dragY = e.getScreenY() - stage.getY();
+            }
+        });
+        titleBar.setOnMouseDragged(e -> {
+            if (!stage.isMaximized()) {
+                stage.setX(e.getScreenX() - dragX);
+                stage.setY(e.getScreenY() - dragY);
+            }
+        });
+        titleBar.setOnMouseClicked(e -> {
+            if (e.getClickCount() == 2) {
+                boolean now = !stage.isMaximized();
+                stage.setMaximized(now);
+                maxBtn.setGraphic(maxGlyph(now));
+            }
+        });
+
+        VBox bar = new VBox(titleBar, top);
         refreshAccountButton();
-        return top;
+        return bar;
+    }
+
+    /** 最小化符号：一条圆角横线。 */
+    private javafx.scene.Node minGlyph() {
+        javafx.scene.shape.Rectangle r = new javafx.scene.shape.Rectangle(13, 2);
+        r.setFill(javafx.scene.paint.Color.web(Ui.TEXT));
+        r.setArcWidth(2);
+        r.setArcHeight(2);
+        return r;
+    }
+
+    /** 最大化 / 还原符号：自绘方框（圆角、粗描边），尺寸固定不受字体留白影响。 */
+    private javafx.scene.Node maxGlyph(boolean restored) {
+        javafx.scene.paint.Paint p = javafx.scene.paint.Color.web(Ui.TEXT);
+        if (!restored) {
+            javafx.scene.shape.Rectangle r = new javafx.scene.shape.Rectangle(13, 13);
+            r.setFill(javafx.scene.paint.Color.TRANSPARENT);
+            r.setStroke(p);
+            r.setStrokeWidth(1.8);
+            r.setArcWidth(3);
+            r.setArcHeight(3);
+            return r;
+        }
+        javafx.scene.Group g = new javafx.scene.Group();
+        javafx.scene.shape.Rectangle back = new javafx.scene.shape.Rectangle(7, 7);
+        back.setFill(javafx.scene.paint.Color.TRANSPARENT);
+        back.setStroke(p);
+        back.setStrokeWidth(1.6);
+        back.setArcWidth(2);
+        back.setArcHeight(2);
+        back.setX(0);
+        back.setY(4);
+        javafx.scene.shape.Rectangle front = new javafx.scene.shape.Rectangle(7, 7);
+        front.setFill(javafx.scene.paint.Color.TRANSPARENT);
+        front.setStroke(p);
+        front.setStrokeWidth(1.6);
+        front.setArcWidth(2);
+        front.setArcHeight(2);
+        front.setX(4);
+        front.setY(0);
+        g.getChildren().addAll(back, front);
+        return g;
+    }
+
+    /** 关闭符号：两条圆角交叉线。 */
+    private javafx.scene.Node closeGlyph(javafx.scene.paint.Paint c) {
+        javafx.scene.Group g = new javafx.scene.Group();
+        javafx.scene.shape.Line l1 = new javafx.scene.shape.Line(0, 0, 13, 13);
+        javafx.scene.shape.Line l2 = new javafx.scene.shape.Line(13, 0, 0, 13);
+        l1.setStroke(c);
+        l2.setStroke(c);
+        l1.setStrokeWidth(2);
+        l2.setStrokeWidth(2);
+        l1.setStrokeLineCap(javafx.scene.shape.StrokeLineCap.ROUND);
+        l2.setStrokeLineCap(javafx.scene.shape.StrokeLineCap.ROUND);
+        g.getChildren().addAll(l1, l2);
+        return g;
+    }
+
+    /** 标题栏普通窗口按钮：透明无边框、固定图形、圆角 hover 浅底。 */
+    private Button frameShapeButton(javafx.scene.Node graphic) {
+        Button b = new Button();
+        b.setGraphic(graphic);
+        String base = "-fx-background-color:transparent; -fx-border-color:transparent; -fx-border-width:0;"
+                + " -fx-background-radius:8; -fx-border-radius:8; -fx-padding:6 11; -fx-cursor:hand;";
+        b.setStyle(base);
+        b.setOnMouseEntered(e -> b.setStyle("-fx-background-color:rgba(255,255,255,0.10);"
+                + " -fx-border-color:transparent; -fx-border-width:0;"
+                + " -fx-background-radius:8; -fx-border-radius:8; -fx-padding:6 11; -fx-cursor:hand;"));
+        b.setOnMouseExited(e -> b.setStyle(base));
+        return b;
+    }
+
+    /** 标题栏关闭按钮：透明无边框，悬停变红底白叉。 */
+    private Button frameCloseShapeButton() {
+        Button b = new Button();
+        b.setGraphic(closeGlyph(javafx.scene.paint.Color.web(Ui.TEXT_DIM)));
+        String base = "-fx-background-color:transparent; -fx-border-color:transparent; -fx-border-width:0;"
+                + " -fx-background-radius:8; -fx-border-radius:8; -fx-padding:6 11; -fx-cursor:hand;";
+        b.setStyle(base);
+        b.setOnMouseEntered(e -> {
+            b.setGraphic(closeGlyph(javafx.scene.paint.Color.WHITE));
+            b.setStyle("-fx-background-color:#e5484d; -fx-border-color:transparent; -fx-border-width:0;"
+                    + " -fx-background-radius:8; -fx-border-radius:8; -fx-padding:6 11; -fx-cursor:hand;");
+        });
+        b.setOnMouseExited(e -> {
+            b.setGraphic(closeGlyph(javafx.scene.paint.Color.web(Ui.TEXT_DIM)));
+            b.setStyle(base);
+        });
+        return b;
     }
 
     /**
@@ -930,6 +1082,8 @@ public class LauncherApp extends Application {
         if (content.getChildren().size() == 1 && content.getChildren().get(0) == node) return;
         content.getChildren().setAll(node);
         Ui.pageIn(node);
+        // 内容页变化后：仅主页透出动态夜景，其余页面回到不透明深色
+        refreshPageBackground();
     }
 
     /** 切换到下载中心页。 */
@@ -979,6 +1133,8 @@ public class LauncherApp extends Application {
         pageLayer.getChildren().setAll(holder);
         pageLayer.setVisible(true);
         Ui.pageIn(holder);
+        // 全页详情覆盖中：隐藏底层动态夜景
+        refreshPageBackground();
         setStatus(status);
     }
 
@@ -1000,6 +1156,8 @@ public class LauncherApp extends Application {
             if (pageLayer.getChildren().size() == 1 && pageLayer.getChildren().get(0) == cur) {
                 pageLayer.getChildren().clear();
                 pageLayer.setVisible(false);
+                // 覆盖层收起后按底层当前页面恢复夜景 / 深色
+                refreshPageBackground();
             }
         });
     }
@@ -1145,8 +1303,24 @@ public class LauncherApp extends Application {
         }
     }
 
-    /** 根背景样式：default=渐变 / image=自定义图片 / transparent=透明。 */
-    public String bgStyle() {
+    /** 是否默认内置背景模式（非自选图片、非透明）。 */
+    private boolean isDefaultMode() {
+        String mode = config.bgMode == null ? "default" : config.bgMode;
+        return !"image".equals(mode) && !"transparent".equals(mode);
+    }
+
+    /** 当前是否停留在主页：内容区就是主页节点，且无全页详情覆盖。 */
+    private boolean isOnHome() {
+        if (homeView == null) return false;
+        if (pageLayer != null && pageLayer.isVisible()) return false;
+        return content.getChildren().size() == 1 && content.getChildren().get(0) == homeView.root();
+    }
+
+    /**
+     * 根背景样式：default 模式下主页透明透出动态夜景，其余页面铺不透明深色；
+     * image / transparent 维持原全局行为。
+     */
+    private String rootBgStyle() {
         String mode = config.bgMode == null ? "default" : config.bgMode;
         if ("image".equals(mode)) {
             String path = config.bgImagePath;
@@ -1157,14 +1331,54 @@ public class LauncherApp extends Application {
                         + " -fx-background-size: cover;"
                         + " -fx-background-position: center;";
             }
-            // 图片失效时回退渐变
-            return "-fx-background-color:" + Ui.BG_GRADIENT + ";";
+            // 图片失效时回退深灰
+            return "-fx-background-color:#26282d;";
         }
         if ("transparent".equals(mode)) {
             // 真透明：露出桌面壁纸（无边框窗口见 start()）
             return "-fx-background-color: transparent;";
         }
-        return "-fx-background-color:" + Ui.BG_GRADIENT + ";";
+        // default：主页透明透动画；非主页不透明深灰盖住动画层
+        if (isOnHome()) return "-fx-background-color: transparent;";
+        return "-fx-background-color:#26282d;";
+    }
+
+    /**
+     * 按「模式 + 是否主页」挂载 / 移除最底层动态背景并启停粒子动画。
+     * 只有默认模式且停留在主页才挂动画层；其余情况移除并停止时间线，避免空跑。
+     */
+    private void syncAnimatedBackground() {
+        if (shell == null) return;
+        boolean want = isDefaultMode() && isOnHome();
+        if (want) {
+            if (animatedBg == null) {
+                animatedBg = new AnimatedBackground();
+            }
+            if (!shell.getChildren().contains(animatedBg.node())) {
+                shell.getChildren().add(0, animatedBg.node());
+            }
+            animatedBg.start();
+        } else if (animatedBg != null) {
+            animatedBg.stop();
+            shell.getChildren().remove(animatedBg.node());
+        }
+    }
+
+    /** 切页后统一刷新：root 底色 + 外壳底色 + 动画层显隐。 */
+    private void refreshPageBackground() {
+        if (root != null) root.setStyle(rootBgStyle());
+        applyShellStyle();
+        syncAnimatedBackground();
+    }
+
+    /** 外壳兜底底色：非透明模式铺深灰圆角底，裁掉的四角不显杂色；透明模式透桌面。 */
+    private void applyShellStyle() {
+        if (shell == null) return;
+        if (transparentWindow) {
+            shell.setStyle("-fx-background-color:transparent; -fx-background-radius:12;");
+        } else {
+            shell.setStyle("-fx-background-color:#26282d; -fx-background-radius:12;");
+        }
     }
 
     /**
@@ -1174,7 +1388,8 @@ public class LauncherApp extends Application {
     public void applyThemeAndRebuild() {
         Ui.applyTheme(config);
         if (root == null) return;
-        root.setStyle(bgStyle());
+        root.setStyle(rootBgStyle());
+        syncAnimatedBackground();
         root.setTop(buildTopBar(stage));
         root.setLeft(buildNav());
         homeView = new HomeView(this);

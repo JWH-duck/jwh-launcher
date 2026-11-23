@@ -100,7 +100,7 @@ public class DownloadView {
         // 内窗口圆角：面板与下方垫层同为 BG_LIGHT，弧线外露出的是垫层(同色)而非窗口底色，
         // 因此圆角四角无白三角/白边；圆角轮廓由深色边框线勾勒。
         page.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-background-radius:20; -fx-background-insets:0;"
-                + "-fx-border-radius:20; -fx-border-color:rgba(31,35,40,0.18);");
+                + "-fx-border-radius:20; -fx-border-color:" + Ui.BORDER + ";");
         page.setPadding(new Insets(12));
         page.getChildren().add(tabs);
     }

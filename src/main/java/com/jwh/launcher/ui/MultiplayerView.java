@@ -124,9 +124,9 @@ public final class MultiplayerView {
             String body = n.startsWith("U/") ? n.substring(2) : n;
             return body.replace("-", "").length() <= 16 ? ch : null;
         }));
-        codeField.setStyle("-fx-background-color:#ffffff; -fx-text-fill:" + Ui.TEXT + ";"
+        codeField.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-text-fill:" + Ui.TEXT + ";"
                 + "-fx-prompt-text-fill:#8a9099; -fx-background-radius:6;"
-                + "-fx-border-color:#d7dbe0; -fx-border-radius:6; -fx-padding:8 10 8 10; -fx-font-size:15px;");
+                + "-fx-border-color:" + Ui.BORDER + "; -fx-border-radius:6; -fx-padding:8 10 8 10; -fx-font-size:15px;");
 
         Button joinBtn = new Button("加入房间");
         stylePrimary(joinBtn);
@@ -173,8 +173,8 @@ public final class MultiplayerView {
         // serverLabel（发号服务地址）按要求不在界面展示，字段保留但不加入状态区。
         VBox statusBox = new VBox(4, statusCap, statusLabel, playerLabel);
         statusBox.setPadding(new Insets(10, 12, 10, 12));
-        statusBox.setStyle("-fx-background-color: rgba(255,255,255,0.75); -fx-background-radius:10;"
-                + "-fx-border-color:#e3e6ea; -fx-border-radius:10;");
+        statusBox.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:10;"
+                + "-fx-border-color:" + Ui.BORDER + "; -fx-border-radius:10;");
 
         root.getChildren().addAll(head, sub, cards, statusBox);
 
@@ -398,8 +398,8 @@ public final class MultiplayerView {
     private static VBox card(javafx.scene.Node... nodes) {
         VBox box = new VBox(8, nodes);
         box.setPadding(new Insets(14, 14, 14, 14));
-        box.setStyle("-fx-background-color: rgba(255,255,255,0.75); -fx-background-radius:10;"
-                + "-fx-border-color:#e3e6ea; -fx-border-radius:10;");
+        box.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:10;"
+                + "-fx-border-color:" + Ui.BORDER + "; -fx-border-radius:10;");
         return box;
     }
 
@@ -409,8 +409,8 @@ public final class MultiplayerView {
     }
 
     private static void styleGhost(Button b) {
-        b.setStyle("-fx-background-color:#ffffff; -fx-text-fill:" + Ui.TEXT + "; -fx-font-size:13px;"
-                + "-fx-background-radius:6; -fx-border-color:#d7dbe0; -fx-border-radius:6;"
+        b.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-text-fill:" + Ui.TEXT + "; -fx-font-size:13px;"
+                + "-fx-background-radius:6; -fx-border-color:" + Ui.BORDER + "; -fx-border-radius:6;"
                 + "-fx-padding:8 16 8 16; -fx-cursor:hand;");
     }
 }

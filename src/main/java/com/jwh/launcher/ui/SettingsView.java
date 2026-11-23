@@ -186,8 +186,9 @@ public class SettingsView {
         // ---- 外观（自定义背景 / 文字颜色）----
         Label la = section("外观（自定义背景 / 文字颜色）");
         bgModeBox.getItems().clear();   // root() 会被多次调用（每次进设置页），先清空避免选项累积重复
-        bgModeBox.getItems().addAll("默认背景（白色）", "图片背景（自选图片）", "透明背景");
+        bgModeBox.getItems().addAll("默认背景（内置动态夜景）", "图片背景（自选图片）", "透明背景");
         bgModeBox.setPrefWidth(210);
+        bgModeBox.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-text-fill:" + Ui.TEXT + ";");
         Button pickBg = smallBtn("选择背景图片…");
         pickBg.setOnAction(e -> {
             FileChooser fc = new FileChooser();
@@ -228,12 +229,12 @@ public class SettingsView {
         rowA2.setAlignment(Pos.CENTER_LEFT);
         rowA2.getChildren().addAll(bgPathLabel);
 
-        textColorPicker.setValue(parseColor(app.config.textColor, Ui.TEXT));
-        dimColorPicker.setValue(parseColor(app.config.dimColor, Ui.TEXT_DIM));
+        textColorPicker.setValue(parseColor(Ui.resolveTextColor(app.config.textColor, Ui.TEXT), Ui.TEXT));
+        dimColorPicker.setValue(parseColor(Ui.resolveTextColor(app.config.dimColor, Ui.TEXT_DIM), Ui.TEXT_DIM));
         Button resetColor = smallBtn("恢复默认文字颜色");
         resetColor.setOnAction(e -> {
-            textColorPicker.setValue(parseColor("#1f2328", Ui.TEXT));
-            dimColorPicker.setValue(parseColor("#6b7280", Ui.TEXT_DIM));
+            textColorPicker.setValue(parseColor("#e8eaed", Ui.TEXT));
+            dimColorPicker.setValue(parseColor("#b9bfc7", Ui.TEXT_DIM));
         });
         HBox rowA3 = new HBox(8);
         rowA3.setAlignment(Pos.CENTER_LEFT);
@@ -289,7 +290,7 @@ public class SettingsView {
         // 分配方式：自动分配（每次打开按本机可用内存推算安全值） / 自定义（手动设置，不检测）
         memModeBox.getItems().clear();   // 同上：root() 重复调用时防止选项累积
         memModeBox.getItems().addAll("自动分配（推荐）", "自定义");
-        memModeBox.setStyle("-fx-background-color:" + Ui.PANEL + ";");
+        memModeBox.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-text-fill:" + Ui.TEXT + ";");
         memHintLabel.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
         memHintLabel.setWrapText(true);
         HBox memModeRow = new HBox(12);
@@ -426,7 +427,7 @@ public class SettingsView {
 
     private Label section(String text) {
         Label l = new Label(text);
-        l.setStyle("-fx-font-size:14px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT_DIM + ";");
+        l.setStyle("-fx-font-size:14px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT + ";");
         return l;
     }
 

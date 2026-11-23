@@ -129,7 +129,7 @@ public class AboutView {
         VBox card = new VBox(8);
         card.setPadding(new Insets(14));
         card.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:10;"
-                + "-fx-border-color:#dfe3e8; -fx-border-radius:10;");
+                + "-fx-border-color:" + Ui.BORDER + "; -fx-border-radius:10;");
         card.setMaxWidth(600);
         return card;
     }

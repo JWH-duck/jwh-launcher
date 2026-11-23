@@ -105,7 +105,7 @@ public class DownloadProgressDialog {
     private static boolean isDark(LauncherApp app) {
         if (app == null || app.config == null) return false;
         String m = app.config.bgMode;
-        return "image".equals(m) || "transparent".equals(m);
+        return "default".equals(m) || "image".equals(m) || "transparent".equals(m);
     }
 
     private void centerOnOwner() {

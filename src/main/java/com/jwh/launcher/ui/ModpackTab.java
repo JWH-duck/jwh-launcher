@@ -129,8 +129,8 @@ public class ModpackTab {
     private VBox cardNode(ModrinthApi.Hit h) {
         VBox card = new VBox(8);
         card.setPadding(new Insets(10));
-        card.setStyle("-fx-background-color:rgba(255,255,255,0.75); -fx-background-radius:10; -fx-border-radius:10;"
-                + "-fx-border-color:#e1e4e8; -fx-border-width:1;");
+        card.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:10; -fx-border-radius:10;"
+                + "-fx-border-color:" + Ui.BORDER + "; -fx-border-width:1;");
         card.setMinWidth(0);
         card.setMaxWidth(Double.MAX_VALUE);
         card.setCursor(Cursor.HAND);
@@ -206,7 +206,7 @@ public class ModpackTab {
         VBox page = new VBox(12);
         page.setPadding(new Insets(20));
         page.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-background-radius:20; -fx-background-insets:0;"
-                + "-fx-border-radius:20; -fx-border-color:rgba(31,35,40,0.18);");
+                + "-fx-border-radius:20; -fx-border-color:" + Ui.BORDER + ";");
 
         // 顶部：整合包图标 + 名称 + 下载量，右上角「返回」
         javafx.scene.image.ImageView icon = new javafx.scene.image.ImageView(Ui.GRASS_BLOCK);
@@ -249,7 +249,7 @@ public class ModpackTab {
         desc.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:13px;");
 
         Label sec = new Label("整合包版本（含对应游戏版本与加载器）");
-        sec.setStyle("-fx-font-size:14px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT_DIM + ";");
+        sec.setStyle("-fx-font-size:14px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT + ";");
 
         // 整合包版本直接铺成列表（与 Mod 下载列表同款观感）
         ListView<ModrinthApi.Version> verList = new ListView<>();
@@ -257,7 +257,7 @@ public class ModpackTab {
         verList.setMaxWidth(Double.MAX_VALUE);
         verList.setDisable(true);
         verList.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-background-radius:12;"
-                + "-fx-border-radius:12; -fx-border-color:rgba(31,35,40,0.14);");
+                + "-fx-border-radius:12; -fx-border-color:" + Ui.BORDER + ";");
         verList.setCellFactory(lv -> new ListCell<ModrinthApi.Version>() {
             @Override
             protected void updateItem(ModrinthApi.Version ver, boolean empty) {

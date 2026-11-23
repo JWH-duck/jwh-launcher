@@ -18,9 +18,12 @@ public final class Ui {
     public static String BG = "#f5f6f8";
     public static String BG_LIGHT = "#e9ebee";
     public static String PANEL = "rgba(255,255,255,0.75)";
+    public static String BORDER = "rgba(255,255,255,0.14)";
     public static final String ACCENT = "#3FA9F5";
     public static String TEXT = "#1f2328";
     public static String TEXT_DIM = "#6b7280";
+    /** 当前是否深色界面：深色背景下文字 / 控件自动用浅色方案（自动反转的判定位）。 */
+    public static boolean DARK = true;
 
     /** 白色渐变背景（默认主题，用于主窗口与卡片）。 */
     public static String BG_GRADIENT =
@@ -29,17 +32,13 @@ public final class Ui {
     /** 按用户配置刷新主题色。 */
     public static void applyTheme(com.jwh.launcher.config.LauncherConfig cfg) {
         String mode = cfg.bgMode == null ? "default" : cfg.bgMode;
-        boolean custom = cfg.textColor != null && !cfg.textColor.isBlank();
-        boolean customDim = cfg.dimColor != null && !cfg.dimColor.isBlank();
-        // 文字颜色：默认主题（白色背景）用深色文字；图片/透明背景（深色半透明）用浅色文字，保证可读
-        if ("image".equals(mode) || "transparent".equals(mode)) {
-            TEXT = custom ? cfg.textColor : "#e8eaed";
-            TEXT_DIM = customDim ? cfg.dimColor : "#9aa0a6";
-        } else {
-            TEXT = custom ? cfg.textColor : "#1f2328";
-            TEXT_DIM = customDim ? cfg.dimColor : "#6b7280";
-        }
-        // 面板/背景色随背景模式调整：图片/透明模式下用半透明深色，让背景透出
+        // 三种背景均为深色：自动按深色界面反色（浅色文字 + 深色控件）
+        DARK = true;
+        // 深色背景下，若历史遗留的自定义字色仍是深色（旧浅色主题保存下来的黑/深灰），
+        // 直接判为不适用，自动回退到浅色默认值，避免深底黑字。
+        TEXT = resolveTextColor(cfg.textColor, "#e8eaed");
+        TEXT_DIM = resolveTextColor(cfg.dimColor, "#b9bfc7");
+        // 面板/背景色随背景模式调整：均用半透明深色，让背景透出
         switch (mode) {
             case "image" -> {
                 BG = "rgba(14,17,22,0.55)";
@@ -53,14 +52,38 @@ public final class Ui {
                 PANEL = "rgba(20,25,32,0.45)";
             }
             default -> {
-                BG = "#f5f6f8";
-                BG_LIGHT = "#e9ebee";
-                PANEL = "rgba(255,255,255,0.75)";
+                // 内置动态夜景：深半透明面板，让底图与粒子透出
+                BG = "rgba(14,17,22,0.55)";
+                BG_LIGHT = "rgba(20,24,30,0.72)";
+                PANEL = "rgba(30,35,44,0.66)";
             }
         }
     }
 
-    /** 官网风格草方块图标（版本列表 / Mod 等列表的默认占位头像），内置资源避免联网。 */
+    /** 判断十六进制颜色是否偏暗（深底上不可读）。解析失败按「非暗」处理，不拦截用户显式选色。 */
+    private static boolean isDarkHex(String hex) {
+        if (hex == null || hex.isBlank()) return false;
+        String h = hex.trim().replace("#", "");
+        try {
+            if (h.length() == 3) {
+                h = "" + h.charAt(0) + h.charAt(0) + h.charAt(1) + h.charAt(1) + h.charAt(2) + h.charAt(2);
+            }
+            if (h.length() != 6) return false;
+            int r = Integer.parseInt(h.substring(0, 2), 16);
+            int g = Integer.parseInt(h.substring(2, 4), 16);
+            int b = Integer.parseInt(h.substring(4, 6), 16);
+            double luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+            return luminance < 0.40;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 深色背景下解析生效字色：空值或偏暗的历史遗留色回退到 fallback 浅色。 */
+    public static String resolveTextColor(String cfgVal, String fallback) {
+        if (cfgVal == null || cfgVal.isBlank() || isDarkHex(cfgVal)) return fallback;
+        return cfgVal;
+    }
     public static final javafx.scene.image.Image GRASS_BLOCK = loadImage("/grass_block.png");
     /** 愚人节版本图标：粘液块（MC 官方贴图，HMCL 同款）。 */
     public static final javafx.scene.image.Image SLIME_BLOCK = loadImage("/slime_block.png");
@@ -406,9 +429,9 @@ public final class Ui {
         javafx.scene.control.TextField field = new javafx.scene.control.TextField(initial == null ? "" : initial);
         field.setPromptText(placeholder == null ? "" : placeholder);
         field.setPrefWidth(430);
-        field.setStyle("-fx-background-color:#ffffff; -fx-text-fill:" + TEXT + ";"
+        field.setStyle("-fx-background-color:" + BG_LIGHT + "; -fx-text-fill:" + TEXT + ";"
                 + "-fx-prompt-text-fill:#8a9099; -fx-background-radius:6;"
-                + "-fx-border-color:#d7dbe0; -fx-border-radius:6; -fx-padding:7 9 7 9; -fx-font-size:13px;");
+                + "-fx-border-color:" + BORDER + "; -fx-border-radius:6; -fx-padding:7 9 7 9; -fx-font-size:13px;");
 
         javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(10, body, field);
         box.setPadding(new javafx.geometry.Insets(4, 0, 0, 0));

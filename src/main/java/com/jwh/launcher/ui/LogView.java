@@ -37,7 +37,7 @@ public class LogView {
         TextArea log = app.gameLog; // 共享日志区
         log.setEditable(false);
         log.setWrapText(true);
-        log.setStyle("-fx-control-inner-background:" + Ui.BG_LIGHT + "; -fx-text-fill:#1f2328; -fx-font-family:Consolas,monospace; -fx-font-size:13px;");
+        log.setStyle("-fx-control-inner-background:" + Ui.BG_LIGHT + "; -fx-text-fill:" + Ui.TEXT + "; -fx-font-family:Consolas,monospace; -fx-font-size:13px;");
         VBox.setVgrow(log, Priority.ALWAYS);
 
         Label hint = new Label("游戏启动后的输出会实时显示在这里；若启动无反应可在此查看报错信息。");

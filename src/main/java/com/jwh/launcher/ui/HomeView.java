@@ -497,7 +497,7 @@ public class HomeView {
      */
     private Region buildDidYouKnow() {
         Label title = new Label("你知道吗…");
-        title.setStyle("-fx-font-size:15px; -fx-font-weight:bold; -fx-text-fill:#202122;");
+        title.setStyle("-fx-font-size:15px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT + ";");
         title.setWrapText(true);
 
         VBox facts = new VBox(3);
@@ -513,9 +513,9 @@ public class HomeView {
         Button more = new Button("更多事实!");
         more.setMaxWidth(Double.MAX_VALUE);
         more.setMinHeight(Region.USE_PREF_SIZE);
-        more.setStyle("-fx-background-color:rgba(233,233,233,0.75); -fx-background-radius:2; -fx-border-radius:2;"
-                + "-fx-border-color:#b9b9b9; -fx-border-width:1;"
-                + "-fx-font-size:12.5px; -fx-font-weight:bold; -fx-text-fill:#202122; -fx-padding:5 0 5 0;");
+        more.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-background-radius:2; -fx-border-radius:2;"
+                + "-fx-border-color:" + Ui.BORDER + "; -fx-border-width:1;"
+                + "-fx-font-size:12.5px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT + "; -fx-padding:5 0 5 0;");
         // 事实区放进可滚动容器：面板高度就只由布局决定，不会因为这一批多一行、下一批少一行而跳动
         ScrollPane scroller = new ScrollPane(facts);
         scroller.setFitToWidth(true);
@@ -549,8 +549,8 @@ public class HomeView {
         VBox box = new VBox(4, title, scroller, more);
         box.setMinHeight(0);
         box.setPadding(new Insets(6, 7, 6, 7));
-        box.setStyle("-fx-background-color:rgba(251,251,251,0.75); -fx-background-radius:3; -fx-border-radius:3;"
-                + "-fx-border-color:#c9c9c9; -fx-border-width:1;");
+        box.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:3; -fx-border-radius:3;"
+                + "-fx-border-color:" + Ui.BORDER + "; -fx-border-width:1;");
         box.setFillWidth(true);
         return box;
     }
@@ -559,7 +559,7 @@ public class HomeView {
     private TextFlow dykFact(String text) {
         Text t = new Text("• " + text);
         t.setFont(Font.font(12.5));
-        t.setFill(Color.web("#202122"));
+        t.setFill(Color.web(Ui.TEXT));
         TextFlow flow = new TextFlow(t);
         flow.setMaxWidth(Double.MAX_VALUE);
         flow.setLineSpacing(1.5);
@@ -909,7 +909,7 @@ public class HomeView {
         pane.setMaxWidth(Double.MAX_VALUE);
         pane.setMaxHeight(Double.MAX_VALUE);
         HBox.setHgrow(pane, Priority.ALWAYS);
-        pane.setStyle("-fx-background-color:#c9c9c9;");
+        pane.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-border-color:" + Ui.BORDER + "; -fx-border-width:1; -fx-background-radius:10; -fx-border-radius:10;");
 
         // 内容再宽也裁在本卡内
         Rectangle paneClip = new Rectangle();
@@ -1022,8 +1022,8 @@ public class HomeView {
         });
 
         StackPane card = new StackPane(content);
-        card.setStyle("-fx-background-color:rgba(255,255,255,0.75); -fx-background-radius:6; -fx-border-radius:6;"
-                + "-fx-border-color:#bbbbbb; -fx-border-width:2;");
+        card.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:6; -fx-border-radius:6;"
+                + "-fx-border-color:" + Ui.BORDER + "; -fx-border-width:2;");
         // 横向撑满内容区；高度按「两张卡各 2:1」算（两卡之间留 8px 缝），
         // 再压一个「不超过可用高 42%」的上限：全屏后窗口变宽，只按宽度算高度会把
         // 下面的「你知道吗」面板和启动键挤出可见区。
@@ -1095,7 +1095,7 @@ public class HomeView {
         iv.setSmooth(true);
 
         Label name = new Label(label);
-        name.setStyle("-fx-text-fill:#5b6169; -fx-font-size:13px;");
+        name.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:13px;");
 
         VBox box = new VBox(3, iv, name);
         box.setAlignment(Pos.TOP_CENTER);
@@ -1104,7 +1104,7 @@ public class HomeView {
         box.setPadding(new Insets(1, 8, 1, 3));
         box.setCursor(Cursor.HAND);
         box.setOnMouseEntered(e -> name.setStyle("-fx-text-fill:" + Ui.ACCENT + "; -fx-font-size:13px;"));
-        box.setOnMouseExited(e -> name.setStyle("-fx-text-fill:#5b6169; -fx-font-size:13px;"));
+        box.setOnMouseExited(e -> name.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:13px;"));
         box.setOnMouseClicked(e -> {
             try {
                 app.openUrl(url);
@@ -1140,8 +1140,9 @@ public class HomeView {
         mapSearch = new TextField();
         mapSearch.setPromptText("搜索 地图…");
         mapSearch.setPrefColumnCount(5);
-        mapSearch.setStyle("-fx-background-color:#f3f4f6; -fx-background-radius:6; -fx-border-radius:6;"
-                + "-fx-border-color:#d7dbe0; -fx-border-width:1; -fx-padding:6 12; -fx-font-size:14px;"
+        mapSearch.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-text-fill:" + Ui.TEXT
+                + "; -fx-prompt-text-fill:" + Ui.TEXT_DIM + "; -fx-background-radius:6; -fx-border-radius:6;"
+                + "-fx-border-color:" + Ui.BORDER + "; -fx-border-width:1; -fx-padding:6 12; -fx-font-size:14px;"
                 + "-fx-focus-color:transparent; -fx-faint-focus-color:transparent;");
         HBox.setHgrow(mapSearch, Priority.ALWAYS);
         mapSearch.setOnAction(e -> reloadMaps());
@@ -1155,8 +1156,9 @@ public class HomeView {
         mapSort.getSelectionModel().select(0);
         mapSort.setPrefWidth(96);
         mapSort.setMinWidth(96);
-        mapSort.setStyle("-fx-background-color:#f3f4f6; -fx-background-radius:6; -fx-border-radius:6;"
-                + "-fx-border-color:#d7dbe0; -fx-border-width:1; -fx-font-size:13px;");
+        mapSort.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-text-fill:" + Ui.TEXT
+                + "; -fx-background-radius:6; -fx-border-radius:6;"
+                + "-fx-border-color:" + Ui.BORDER + "; -fx-border-width:1; -fx-font-size:13px;");
         mapSort.setOnAction(e -> reloadMaps());
 
         // 工具栏只留「搜索 + 排序」，和网页顶部一致；它放在滚动区里，翻页时跟着一起走
@@ -1204,11 +1206,12 @@ public class HomeView {
         });
 
         mapStatus = new Label("");
-        mapStatus.setStyle("-fx-text-fill:#8a9099; -fx-font-size:10.5px;");
+        mapStatus.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:10.5px;");
         mapStatus.setTextOverrun(OverrunStyle.ELLIPSIS);
 
         mapMoreBtn = new Button("加载更多");
-        mapMoreBtn.setStyle("-fx-background-color:#f0f2f5; -fx-text-fill:#1f2328; -fx-background-radius:6;"
+        mapMoreBtn.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-text-fill:" + Ui.TEXT
+                + "; -fx-background-radius:6;"
                 + "-fx-font-size:11px; -fx-padding:2 9; -fx-cursor:hand;");
         mapMoreBtn.setVisible(false);
         mapMoreBtn.setOnAction(e -> loadMaps(false));
@@ -1251,7 +1254,7 @@ public class HomeView {
         mapGrid.getChildren().removeIf(n -> n != mapBar && n != mapMcRow);
         if (mapItems.isEmpty()) {
             Label empty = new Label("暂无地图");
-            empty.setStyle("-fx-text-fill:#8a9099; -fx-font-size:12px;");
+            empty.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
             empty.setPadding(new Insets(16, 0, 0, 4));
             mapGrid.getChildren().add(empty);
             return;
@@ -1334,8 +1337,8 @@ public class HomeView {
      */
     private VBox buildMapCard(BbsmcMaps.Item it) {
         VBox card = new VBox(0);
-        card.setStyle("-fx-background-color:rgba(255,255,255,0.75); -fx-background-radius:8; -fx-border-radius:8;"
-                + "-fx-border-color:#e1e4e8; -fx-border-width:1;");
+        card.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:8; -fx-border-radius:8;"
+                + "-fx-border-color:" + Ui.BORDER + "; -fx-border-width:1;");
         card.setMinWidth(0);
         card.setPrefWidth(200);
         card.setMaxWidth(Double.MAX_VALUE);
@@ -1351,7 +1354,7 @@ public class HomeView {
         cover.setImage(Ui.GRASS_BLOCK);
 
         StackPane coverBox = new StackPane(cover);
-        coverBox.setStyle("-fx-background-color:#dfe3e8;");
+        coverBox.setStyle("-fx-background-color:" + Ui.BG + ";");
         coverBox.setMinHeight(76);
         coverBox.setPrefHeight(76);
         coverBox.setMaxHeight(76);
@@ -1374,7 +1377,7 @@ public class HomeView {
         miniBox.setMinSize(30, 30);
         miniBox.setPrefSize(30, 30);
         miniBox.setMaxSize(30, 30);
-        miniBox.setStyle("-fx-background-color:rgba(255,255,255,0.75); -fx-background-radius:6; -fx-border-color:#e1e4e8;"
+        miniBox.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:6; -fx-border-color:" + Ui.BORDER + ";"
                 + "-fx-border-radius:6; -fx-border-width:1;");
         StackPane.setAlignment(miniBox, Pos.BOTTOM_LEFT);
         StackPane.setMargin(miniBox, new Insets(0, 0, -10, 9));
@@ -1382,7 +1385,7 @@ public class HomeView {
 
         // ---- 文字区 ----
         Label titleL = new Label(it.title);
-        titleL.setStyle("-fx-font-size:15px; -fx-font-weight:bold; -fx-text-fill:#1f2328;");
+        titleL.setStyle("-fx-font-size:15px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT + ";");
         titleL.setTextOverrun(OverrunStyle.ELLIPSIS);
         titleL.setMaxWidth(Double.MAX_VALUE);
         titleL.setMinWidth(0);
@@ -1391,14 +1394,14 @@ public class HomeView {
         if (it.author != null && !it.author.isBlank()) au.append("by ").append(it.author);
         if (it.modified > 0) au.append(au.length() > 0 ? " · " : "").append("更新于 ").append(BbsmcMaps.ago(it.modified));
         Label authorL = new Label(au.toString());
-        authorL.setStyle("-fx-font-size:12.5px; -fx-text-fill:#8a9099;");
+        authorL.setStyle("-fx-font-size:12.5px; -fx-text-fill:" + Ui.TEXT_DIM + ";");
         authorL.setTextOverrun(OverrunStyle.ELLIPSIS);
         authorL.setMaxWidth(Double.MAX_VALUE);
         authorL.setMinWidth(0);
 
         Label descL = new Label(it.description == null || it.description.isBlank()
                 ? "（作者没有写简介）" : it.description);
-        descL.setStyle("-fx-font-size:12.5px; -fx-text-fill:#5b6068;");
+        descL.setStyle("-fx-font-size:12.5px; -fx-text-fill:" + Ui.TEXT_DIM + ";");
         descL.setWrapText(true);
         descL.setMaxHeight(18);
         descL.setMinHeight(18);
@@ -1413,9 +1416,9 @@ public class HomeView {
         for (int i = 0; i < it.tags.size() && i < 3; i++) tagBox.getChildren().add(mapTag(it.tags.get(i)));
 
         Label dlL = new Label("↓ " + BbsmcMaps.num(it.downloads));
-        dlL.setStyle("-fx-font-size:12.5px; -fx-text-fill:#3b4048;");
+        dlL.setStyle("-fx-font-size:12.5px; -fx-text-fill:" + Ui.TEXT_DIM + ";");
         Label followL = new Label("♥ " + it.follows);
-        followL.setStyle("-fx-font-size:12.5px; -fx-text-fill:#3b4048;");
+        followL.setStyle("-fx-font-size:12.5px; -fx-text-fill:" + Ui.TEXT_DIM + ";");
         HBox numBox = new HBox(8, dlL, followL);
         numBox.setAlignment(Pos.CENTER_LEFT);
 
@@ -1455,8 +1458,8 @@ public class HomeView {
     /** 标签小胶囊。 */
     private static Label mapTag(String text) {
         Label l = new Label(text);
-        l.setStyle("-fx-background-color:#f0f2f5; -fx-background-radius:4; -fx-padding:1 6;"
-                + "-fx-font-size:11.5px; -fx-text-fill:#5b6068;");
+        l.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-background-radius:4; -fx-padding:1 6;"
+                + "-fx-font-size:11.5px; -fx-text-fill:" + Ui.TEXT_DIM + ";");
         return l;
     }
 
@@ -1705,7 +1708,7 @@ public class HomeView {
         // 不用 Tooltip —— 独立 Popup 里的 Tooltip 会被弹层的 autoHide 立即关掉）
         list.setPadding(new Insets(30, 6, 6, 6));
         list.setPrefWidth(292);
-        list.setStyle("-fx-background-color:white; -fx-background-radius:12;"
+        list.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:12;"
                 + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.20), 14, 0, 0, 4);");
         List<LocalVersions.LocalVersion> items = this.versionList.getItems();
         if (items.isEmpty()) {
@@ -1776,7 +1779,7 @@ public class HomeView {
         // 用 Button 而不是 Label：Label 在这套 Popup 里点不中（命中区域过小/被行节点抢走事件），
         // 换成实体按钮后 26x26 的点击区域稳定可点。
         Button more = new Button("\u22ef");
-        String moreNormal = "-fx-background-color:transparent; -fx-font-size:18px; -fx-text-fill:#a8adb3;"
+        String moreNormal = "-fx-background-color:transparent; -fx-font-size:18px; -fx-text-fill:" + Ui.TEXT_DIM + ";"
                 + "-fx-padding:0; -fx-background-radius:6;";
         more.setStyle(moreNormal);
         more.setMinSize(26, 26);
@@ -1801,7 +1804,7 @@ public class HomeView {
         });
         // 行尾灰色叉号：删除该实例（与主页「删除版本」同一套逻辑，会二次确认）
         Button del = new Button("\u2715");
-        String delNormal = "-fx-background-color:transparent; -fx-font-size:13px; -fx-text-fill:#a8adb3;"
+        String delNormal = "-fx-background-color:transparent; -fx-font-size:13px; -fx-text-fill:" + Ui.TEXT_DIM + ";"
                 + "-fx-padding:0; -fx-background-radius:6;";
         del.setStyle(delNormal);
         del.setMinSize(26, 26);
