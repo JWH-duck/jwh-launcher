@@ -489,6 +489,10 @@ public class LauncherApp extends Application {
         com.jwh.launcher.ui.Ui.dialogOwner = stage;
         // 主窗出现后让加载页淡出（300ms），视觉上就是加载页退场、启动器浮现
         com.jwh.launcher.ui.Splash.finish();
+        // 加载页结束、主窗真正进入视野后，主页小人自动打一次招呼（仅本次启动播一次）
+        javafx.application.Platform.runLater(() -> {
+            if (homeView != null) homeView.autoGreet();
+        });
         // 首次显示时窗口会被撑开：要么按内容 pref（地图卡片一行行累加），
         // 要么被系统恢复成上次那个矩形（实测会停在 1136×739 @392,91）。
         // 这里在 show 后立刻钉一次、再延时 500ms 钉一次，压过系统的恢复。

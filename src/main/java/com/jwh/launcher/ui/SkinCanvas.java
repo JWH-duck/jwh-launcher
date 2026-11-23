@@ -98,6 +98,11 @@ public class SkinCanvas extends Canvas {
     /** 平滑后的当前头部角度，由动画帧逐步逼近目标，避免鼠标一动头就瞬移。 */
     private double headYawNow;
     private double headPitchNow;
+    /**
+     * 头部跟随锁定：true 时鼠标移动不再牵动头部（进场挥手前后的固定姿态期）。
+     * 挥手动作自然播完后由帧循环自动解除；皮肤未就绪时由调用方手动解除。
+     */
+    private boolean headFollowLocked;
     private static final boolean PERF = Boolean.getBoolean("jwh.skin.perf");
     private static final boolean NOLIMIT = Boolean.getBoolean("jwh.skin.nolimit");
     private long perfFrames, perfNanos, perfStart;
@@ -131,7 +136,7 @@ public class SkinCanvas extends Canvas {
                     animTime += el / 1e9;
                     if (action != 0) {
                         actionTime += el / 1e9;
-                        if (actionTime >= ACTION_WAVE_DUR) { action = 0; actionTime = 0; }
+                        if (actionTime >= ACTION_WAVE_DUR) { action = 0; actionTime = 0; headFollowLocked = false; }
                     }
                 }
                 started = true;
@@ -566,6 +571,7 @@ public class SkinCanvas extends Canvas {
      * 只在动画帧里平滑逼近，不会瞬移；传 NaN 解除注视。
      */
     public void setHeadAim(double yawDeg, double pitchDeg) {
+        if (headFollowLocked) return;
         if (Double.isNaN(yawDeg) || Double.isNaN(pitchDeg)) {
             this.headAimYaw = Double.NaN;
             this.headAimPitch = Double.NaN;
@@ -580,6 +586,16 @@ public class SkinCanvas extends Canvas {
     public void clearHeadAim() {
         this.headAimYaw = Double.NaN;
         this.headAimPitch = Double.NaN;
+    }
+
+    /** 锁定头部跟随：此后鼠标移动不再牵动头部，直到挥手结束自动解除（或手动解除）。 */
+    public void lockHeadFollow() {
+        this.headFollowLocked = true;
+    }
+
+    /** 手动解除头部跟随锁定（用于皮肤未就绪、本次不播挥手的兜底）。 */
+    public void unlockHeadFollow() {
+        this.headFollowLocked = false;
     }
 
     /** 按当前角度整幅重绘（含待机动画与点击反馈的当前帧状态）。 */
@@ -658,6 +674,10 @@ public class SkinCanvas extends Canvas {
             headDip = actHeadPitch;
             this.headYawNow = actHeadYaw;
             this.headPitchNow = actHeadPitch;
+        } else if (headFollowLocked) {
+            // 进场锁定期（挥手前后）：头部钉在当前角度，不追鼠标、也不做待机扫视。
+            headTurn = this.headYawNow;
+            headDip = this.headPitchNow;
         } else if (Double.isNaN(this.headAimYaw)) {
             // 常态：待机时脑袋自己轻轻左右扫视
             headTurn = Math.sin(t * 0.85) * 5.0;

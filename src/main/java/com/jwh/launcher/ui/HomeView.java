@@ -104,6 +104,11 @@ public class HomeView {
     /** 主页皮肤小人：与皮肤库同一个渲染器，皮肤同步「皮肤库正在使用」的那张。 */
     private SkinCanvas homeSkin;
 
+    /** 入场是否已自动打过招呼：仅首次进主页播一次，之后切回主页不再重复。 */
+    private boolean greeted = false;
+    /** 入场打招呼的延迟定时器，错开窗口弹出 / 皮肤加载的同一帧，人物先站定再抬手。 */
+    private PauseTransition greetTimer;
+
     /** 加载器类型 → 头像（NeoForge=狐狸、Fabric=床、Quilt=拼布、Forge=火焰；原版=草方块）。 */
     private static final java.util.Map<String, Image> LOADER_ICONS = new java.util.HashMap<>();
     private static final Image VANILLA_ICON = loadIcon("/icons/loader_vanilla.png");
@@ -1963,6 +1968,32 @@ public class HomeView {
             }
         }
         this.homeSkin.render();
+    }
+
+    /**
+     * 入场自动打招呼：加载页结束、主窗真正显示后由 {@code LauncherApp} 调一次，
+     * 人物站定片刻后自动挥一次手（复用点击时的挥手动作）。
+     * 只播一次，之后从别的页面切回主页不再重复；主题重建会新建主页，届时再播一次。
+     * 若此刻皮肤还没载入（无账号 / 尚无皮肤文件），不置位打招呼标记，等下次就绪再排，
+     * 避免对着空占位播动作。
+     */
+    public void autoGreet() {
+        if (this.greeted || this.homeSkin == null) return;
+        // 进场即锁定头部跟随：挥手前后都不跟鼠标，动作播完后由画布帧循环自动解锁。
+        this.homeSkin.lockHeadFollow();
+        if (this.greetTimer != null) this.greetTimer.stop();
+        this.greetTimer = new PauseTransition(Duration.millis(600));
+        this.greetTimer.setOnFinished(e -> {
+            if (this.homeSkin == null) return;
+            if (!this.homeSkin.hasSkin()) {
+                this.greeted = false;
+                this.homeSkin.unlockHeadFollow();
+                return;
+            }
+            this.greeted = true;
+            this.homeSkin.clickPulse();
+        });
+        this.greetTimer.play();
     }
 
     /** 刷新版本列表（扫描放后台：版本目录多时避免阻塞 UI，表现为点击未响应）。 */
