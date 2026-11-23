@@ -259,6 +259,8 @@ public class ModrinthTab {
     }
 
     public void refreshVersions() {
+        // 先在 FX 线程记下当前选中实例；重建下拉后若它仍在列表内则保留，避免刷新跳回首项。
+        String oldId = versionBox.getSelectionModel().getSelectedItem();
         Ui.async2(() -> {
             java.util.Map<String, String> names = new java.util.HashMap<>();
             java.util.Map<String, String> bases = new java.util.HashMap<>();
@@ -279,7 +281,9 @@ public class ModrinthTab {
             loaderOf.clear();
             loaderOf.putAll(r.loaders());
             versionBox.getItems().setAll(r.items());
-            if (versionBox.getSelectionModel().getSelectedItem() == null && !r.items().isEmpty()) {
+            if (oldId != null && r.items().contains(oldId)) {
+                versionBox.getSelectionModel().select(oldId);
+            } else if (!r.items().isEmpty()) {
                 versionBox.getSelectionModel().selectFirst();
             }
         }, e -> { /* 扫描失败保持当前列表 */ });

@@ -160,6 +160,8 @@ public class ShaderTab {
      * API 用纯游戏版本（mcBase），安装落点用实例 id 目录。
      */
     public void refreshVersions() {
+        // 记下当前选中实例；重建下拉后若它仍在列表内则保留，避免刷新跳回首项。
+        String oldId = versionBox.getSelectionModel().getSelectedItem();
         displayNames.clear();
         mcBases.clear();
         List<String> items = new ArrayList<>();
@@ -169,7 +171,9 @@ public class ShaderTab {
             items.add(v.id());
         }
         versionBox.getItems().setAll(items);
-        if (versionBox.getSelectionModel().getSelectedItem() == null && !items.isEmpty()) {
+        if (oldId != null && items.contains(oldId)) {
+            versionBox.getSelectionModel().select(oldId);
+        } else if (!items.isEmpty()) {
             versionBox.getSelectionModel().selectFirst();
         }
     }
