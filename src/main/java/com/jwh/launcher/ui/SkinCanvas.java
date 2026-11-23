@@ -209,7 +209,6 @@ public class SkinCanvas extends Canvas {
         out.getPixelWriter().setPixels(0, 0, TEX, TEX,
                 PixelFormat.getIntArgbInstance(), pixels, 0, TEX);
         tex = out;
-        fixOpaqueSkin();
         buildFill();
         slim = slimOverride != null ? slimOverride : detectSlim();
         buildModel();
@@ -319,136 +318,22 @@ public class SkinCanvas extends Canvas {
         }
     }
 
-    /**
-     * 不透明背景修复（对齐官网 fixOpaqueSkin）：若整张皮肤没有任何半透明/透明像素，
-     * 说明是早期未留镂空的皮肤，第二层（帽子/外套/袖子/裤腿）贴图区会被当成实色壳画出；
-     * 这里把这些区域清成透明，避免人物外面套一圈多余实色。现代皮肤外层本来就有透明镂空，
-     * 检测到透明像素就不会进入清空分支。
-     */
-    private void fixOpaqueSkin() {
-        boolean hasTransparency = false;
-        for (int i = 0; i < pixels.length; i++) {
-            if (((pixels[i] >>> 24) & 0xFF) != 255) {
-                hasTransparency = true;
-                break;
-            }
-        }
-        if (hasTransparency) return;
-        // 头盔第二层
-        clearRegion(40, 0, 8, 8);
-        clearRegion(48, 0, 8, 8);
-        clearRegion(32, 8, 8, 8);
-        clearRegion(40, 8, 8, 8);
-        clearRegion(48, 8, 8, 8);
-        clearRegion(56, 8, 8, 8);
-        // 右腿第二层
-        clearRegion(4, 32, 4, 4);
-        clearRegion(8, 32, 4, 4);
-        clearRegion(0, 36, 4, 12);
-        clearRegion(4, 36, 4, 12);
-        clearRegion(8, 36, 4, 12);
-        clearRegion(12, 36, 4, 12);
-        // 躯干第二层
-        clearRegion(20, 32, 8, 4);
-        clearRegion(28, 32, 8, 4);
-        clearRegion(16, 36, 4, 12);
-        clearRegion(20, 36, 8, 12);
-        clearRegion(28, 36, 4, 12);
-        clearRegion(32, 36, 8, 12);
-        // 右臂第二层
-        clearRegion(44, 32, 4, 4);
-        clearRegion(48, 32, 4, 4);
-        clearRegion(40, 36, 4, 12);
-        clearRegion(44, 36, 4, 12);
-        clearRegion(48, 36, 4, 12);
-        clearRegion(52, 36, 4, 12);
-        // 左腿第二层
-        clearRegion(4, 48, 4, 4);
-        clearRegion(8, 48, 4, 4);
-        clearRegion(0, 52, 4, 12);
-        clearRegion(4, 52, 4, 12);
-        clearRegion(8, 52, 4, 12);
-        clearRegion(12, 52, 4, 12);
-        // 左臂第二层
-        clearRegion(52, 48, 4, 4);
-        clearRegion(56, 48, 4, 4);
-        clearRegion(48, 52, 4, 12);
-        clearRegion(52, 52, 4, 12);
-        clearRegion(56, 52, 4, 12);
-        clearRegion(60, 52, 4, 12);
-    }
-
-    /** 把贴图矩形清成全透明（alpha=0）。 */
-    private void clearRegion(int u, int v, int w, int h) {
-        for (int y = v; y < v + h; y++) {
-            for (int x = u; x < u + w; x++) {
-                if (x < 0 || y < 0 || x >= TEX || y >= TEX) continue;
-                pixels[y * TEX + x] = 0;
-            }
-        }
-    }
-
     public boolean hasSkin() {
         return tex != null;
     }
 
-    /**
-     * 细手臂判定（对齐官网 skinview3d 的 inferModelType）。
-     * <p>slim 皮肤左右臂各有 2 个未使用留白区：右臂 (50,16,2,4)、(54,20,2,12)，
-     * 左臂 (42,48,2,4)、(46,52,2,12)。任一区含半透明/透明像素即判 slim；
-     * 四块全部纯黑或全部纯白同样判 slim；否则按经典宽手臂。
-     */
+    /** 细手臂判定：手臂贴图区 (54,20) 起 2×12 是否全透明（与主流皮肤预览实现一致）。 */
     private boolean detectSlim() {
         // 调试开关：-Djwh.skin.forceClassic=true 强制按经典 4 像素手臂渲染，用于肉眼对比
         if (Boolean.getBoolean("jwh.skin.forceClassic")) return false;
         // 调试开关：-Djwh.skin.forceSlim=true 强制按细手臂渲染
         if (Boolean.getBoolean("jwh.skin.forceSlim")) return true;
-        int[][] zones = {
-                {50, 16, 2, 4}, {54, 20, 2, 12}, {42, 48, 2, 4}, {46, 52, 2, 12}
-        };
-        for (int[] z : zones) {
-            if (hasNonOpaque(z[0], z[1], z[2], z[3])) return true;
-        }
-        boolean allBlack = true, allWhite = true;
-        for (int[] z : zones) {
-            if (!areaAllBlack(z[0], z[1], z[2], z[3])) allBlack = false;
-            if (!areaAllWhite(z[0], z[1], z[2], z[3])) allWhite = false;
-        }
-        return allBlack || allWhite;
-    }
-
-    /** 区内是否存在 alpha 未到 255 的像素（半透明或透明）。 */
-    private boolean hasNonOpaque(int u, int v, int w, int h) {
-        for (int y = v; y < v + h; y++) {
-            for (int x = u; x < u + w; x++) {
-                if (x < 0 || y < 0 || x >= TEX || y >= TEX) continue;
-                if (((pixels[y * TEX + x] >>> 24) & 0xFF) != 255) return true;
-            }
-        }
-        return false;
-    }
-
-    /** 区内是否全部为纯黑不透明像素（r=g=b=0, alpha=255）。 */
-    private boolean areaAllBlack(int u, int v, int w, int h) {
-        for (int y = v; y < v + h; y++) {
-            for (int x = u; x < u + w; x++) {
-                if (x < 0 || y < 0 || x >= TEX || y >= TEX) continue;
-                int c = pixels[y * TEX + x];
-                if (((c >>> 24) & 0xFF) != 255 || ((c >> 16) & 0xFF) != 0
-                        || ((c >> 8) & 0xFF) != 0 || (c & 0xFF) != 0) return false;
-            }
-        }
-        return true;
-    }
-
-    /** 区内是否全部为纯白不透明像素（r=g=b=255, alpha=255）。 */
-    private boolean areaAllWhite(int u, int v, int w, int h) {
-        for (int y = v; y < v + h; y++) {
-            for (int x = u; x < u + w; x++) {
-                if (x < 0 || y < 0 || x >= TEX || y >= TEX) continue;
-                int c = pixels[y * TEX + x];
-                if (((c >>> 24) & 0xFF) != 255 || ((c >> 16) & 0xFF) != 255
-                        || ((c >> 8) & 0xFF) != 255 || (c & 0xFF) != 255) return false;
+        // 经典 4 像素手臂的"后背"贴图区 (52,20,4,12) 只要画过东西，就一定是经典模型。
+        // 只看 (54,20) 两列会把"后背只画了一半"的经典皮肤误判成细手臂。
+        if (hasOpaque(52, 20, 4, 12)) return false;
+        for (int y = 20; y < 32; y++) {
+            for (int x = 54; x < 56; x++) {
+                if ((pixels[y * TEX + x] >>> 24) != 0) return false;
             }
         }
         return true;
@@ -466,10 +351,8 @@ public class SkinCanvas extends Canvas {
         // slim 只收窄模型，贴图 UV 区仍是 4 像素宽，两者不能混用
         int armW = slim ? 3 : 4;
         if (slim) {
-            // 细手臂贴图区域角与经典一致：右臂 (40,16)、左臂 (32,48)；
-            // addSlimArm 的 u 是"右面"列起点，不能传成前面角，否则整组 UV 横移、侧面采到透明列。
-            addSlimArm(2, -4 - armW, 12, -2, armW, 12, 4, 40, 16, false);
-            addSlimArm(3, 4, 12, -2, armW, 12, 4, 32, 48, false);
+            addSlimArm(2, -4 - armW, 12, -2, armW, 12, 4, 44, 16, false);
+            addSlimArm(3, 4, 12, -2, armW, 12, 4, 36, 48, false);
         } else {
             addBox(2, -4 - armW, 12, -2, armW, 12, 4, 40, 16, 4, 12, 4, false);
             addBox(3, 4, 12, -2, armW, 12, 4, 32, 48, 4, 12, 4, false);
@@ -479,21 +362,17 @@ public class SkinCanvas extends Canvas {
         addBox(5, 0, 0, -2, 4, 12, 4, 16, 48, 4, 12, 4, false);
 
         // 外皮肤层（比内层大一圈；UV 展开仍按内层尺寸，贴图才不错位）
-        // 头部外层 9³：单边外扩 0.5（与官网 skinview3d 一致，头部是特例）。
-        imageLayer(1, -4.5, 24.5, -4.5, 9, 9, 9, 32, 0, 8, 8, 8);
-        // 躯干外层 8.5×12.5×4.5：与内层同心，单边外扩 0.25（官网值），UV 仍按内层 8×12×4 采。
-        imageLayer(0, -4.25, 12.25, -2.25, 8.5, 12.5, 4.5, 16, 32, 8, 12, 4);
+        imageLayer(1, -4.5, 23.5, -4.5, 9, 9, 9, 32, 0, 8, 8, 8);
+        imageLayer(0, -4.5, 11.5, -2.5, 9, 13, 5, 16, 32, 8, 12, 4);
         if (slim) {
-            if (hasOpaque(40, 28, 16, 20)) addSlimArm(2, -4.25 - armW, 11.75, -2.25, armW + 0.5, 12.5, 4.5, 40, 32, true);
-            if (hasOpaque(48, 44, 16, 20)) addSlimArm(3, 3.75, 11.75, -2.25, armW + 0.5, 12.5, 4.5, 48, 48, true);
+            if (hasOpaque(40, 28, 16, 20)) addSlimArm(2, -4.5 - armW, 11.5, -2.5, armW + 1, 13, 5, 40, 32, true);
+            if (hasOpaque(48, 44, 16, 20)) addSlimArm(3, 3.5, 11.5, -2.5, armW + 1, 13, 5, 48, 48, true);
         } else {
-            imageLayer(2, -4.25 - armW, 11.75, -2.25, armW + 0.5, 12.5, 4.5, 40, 32, 4, 12, 4);
-            imageLayer(3, 3.75, 11.75, -2.25, armW + 0.5, 12.5, 4.5, 48, 48, 4, 12, 4);
+            imageLayer(2, -4.5 - armW, 11.5, -2.5, armW + 1, 13, 5, 40, 32, 4, 12, 4);
+            imageLayer(3, 3.5, 11.5, -2.5, armW + 1, 13, 5, 48, 48, 4, 12, 4);
         }
-        // 腿外层 4.5×12.5×4.5：单边外扩 0.25；内层腿 y[-12,0]，外层 y[-12.25,0.25]。
-        imageLayer(4, -4.25, 0.25, -2.25, 4.5, 12.5, 4.5, 0, 32, 4, 12, 4);
-        // 外层左腿（裤腿层）区域角与内层左腿一致 (16,48)，不能写成 (0,48)，否则贴到右腿区域。
-        imageLayer(5, -0.25, 0.25, -2.25, 4.5, 12.5, 4.5, 16, 48, 4, 12, 4);
+        imageLayer(4, -4.5, -0.5, -2.5, 5, 13, 5, 0, 32, 4, 12, 4);
+        imageLayer(5, -0.5, -0.5, -2.5, 5, 13, 5, 0, 48, 4, 12, 4);
 
         // 披风：背后一块 10×16 的布，顶上贴身、下摆略往外张（和 MC 里垂着的样子一致）
         if (capePx != null) addCape();
@@ -946,13 +825,7 @@ public class SkinCanvas extends Canvas {
             double ny1 = fny * cosX - nz1 * sinX;
             double nz2 = fny * sinX + nz1 * cosX;
             double lambert = Math.max(0, nx1 * lx + ny1 * ly + nz2 * lz);
-            // 朴素乘光：环境光乘 albedo（纯黑仍是黑，不叠加固定灰底），方向光只提供面间明暗区分；
-            // 不用曝光曲线表，暗部保持扎实、明暗对比分明，避免画面被抬成灰调。
             double bright = 0.72 + 0.30 * lambert;
-            // 外层贴皮（帽子/外套/袖套/裤腿）只画朝相机的一面：背对相机的板背面若仍光栅化，
-            // 会从壳缝、轮廓棱上把正面颜色（发帘/肤色）漏到斜后视角。法线已随顶点旋到 nz2，
-            // 按旋转后朝向判定，转头/摆臂不会错判丢面；披风是双层兜底结构，不参与剔除。
-            if (f.outer && !f.cape && nz2 < 0.0) continue;
             rasterFace(f, bright);
         }
 
@@ -998,7 +871,7 @@ public class SkinCanvas extends Canvas {
      * <p>屏幕点 p(s,t) = p0 + s·(p1-p0) + t·(p3-p0)，s∈[0,1] 对应纹理横向，t 对应纵向；
      * 正交投影下 (s,t) 与屏幕坐标是线性关系，可逐像素反解出纹理坐标与深度。
      */
-    private void rasterFace(Face f, double L) {
+    private void rasterFace(Face f, double bright) {
         // 用副本做外扩：绝不能改 f.sx/f.sy 本体，否则动画每帧都会在旧值上再推 0.6px，
         // 几十帧后面就被"吹"变形（脸部贴图错位、边角支棱就是这么来的）。
         double[] sx = {f.sx[0], f.sx[1], f.sx[2], f.sx[3]};
@@ -1065,9 +938,9 @@ public class SkinCanvas extends Canvas {
                     if (argb == 0) continue;
                 }
 
-                int r = (int) (((argb >> 16) & 0xFF) * L);
-                int g = (int) (((argb >> 8) & 0xFF) * L);
-                int b = (int) ((argb & 0xFF) * L);
+                int r = (int) (((argb >> 16) & 0xFF) * bright);
+                int g = (int) (((argb >> 8) & 0xFF) * bright);
+                int b = (int) ((argb & 0xFF) * bright);
                 if (r > 255) r = 255;
                 if (g > 255) g = 255;
                 if (b > 255) b = 255;
