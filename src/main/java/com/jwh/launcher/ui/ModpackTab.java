@@ -19,9 +19,12 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import java.util.ArrayList;
@@ -36,10 +39,12 @@ public class ModpackTab {
     private final LauncherApp app;
     private final ProgressSink sink;
     private final ModrinthApi api = new ModrinthApi();
+    /** 列表卡片统一锁定高度（px）：一行两张等高，描述超出两行截断，不再随文案长短伸缩。 */
+    private static final double CARD_HEIGHT = 96;
     /** 当前搜索结果（双列网格数据源）。 */
     private final List<ModrinthApi.Hit> items = new ArrayList<>();
-    /** 双列卡片网格容器（ScrollPane 内竖向滚动）。 */
-    private final VBox grid = new VBox(10);
+    /** 双列卡片网格容器（ScrollPane 内竖向滚动）：两列各占 50%，以中线为界左右严格等宽。 */
+    private final GridPane grid = new GridPane();
     private final TextField searchBox = new TextField();
     private final Button searchBtn = new Button("搜索");
     private final Button refreshBtn = new Button("刷新");
@@ -68,6 +73,13 @@ public class ModpackTab {
 
         // 双列卡片网格：ScrollPane 内竖向滚动，横向不滚
         grid.setStyle("-fx-background-color:transparent;");
+        grid.setHgap(8);
+        grid.setVgap(10);
+        ColumnConstraints col = new ColumnConstraints();
+        col.setPercentWidth(50);
+        col.setHgrow(Priority.ALWAYS);
+        col.setFillWidth(true);
+        grid.getColumnConstraints().setAll(col, col);
         ScrollPane scroll = new ScrollPane(grid);
         scroll.setFitToWidth(true);
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
@@ -97,42 +109,31 @@ public class ModpackTab {
         return tab;
     }
 
-    /** 重建双列网格：每行两张等宽卡片，落单的最后一张补弹性占位。 */
+    /** 重建双列网格：两列各占 50% 宽度，以中线为界左右严格等宽；落单的最后一张占左列，右列留空。 */
     private void rebuildGrid() {
         grid.getChildren().clear();
-        for (int i = 0; i < items.size(); i += 2) {
-            HBox row = new HBox(8);
-            row.setAlignment(Pos.TOP_LEFT);
-            row.setFillHeight(true);
-            row.setMinWidth(0);
-            row.setMaxWidth(Double.MAX_VALUE);
-
-            VBox a = cardNode(items.get(i));
-            HBox.setHgrow(a, Priority.ALWAYS);
-            row.getChildren().add(a);
-
-            if (i + 1 < items.size()) {
-                VBox b = cardNode(items.get(i + 1));
-                HBox.setHgrow(b, Priority.ALWAYS);
-                row.getChildren().add(b);
-            } else {
-                Region filler = new Region();
-                filler.setMinWidth(0);
-                HBox.setHgrow(filler, Priority.ALWAYS);
-                row.getChildren().add(filler);
-            }
-            grid.getChildren().add(row);
+        for (int i = 0; i < items.size(); i++) {
+            StackPane card = cardNode(items.get(i));
+            GridPane.setHgrow(card, Priority.ALWAYS);
+            GridPane.setFillWidth(card, true);
+            grid.add(card, i % 2, i / 2);
         }
     }
 
-    /** 一张整合包卡片：图标 + 标题/下载量分类/简介，整卡可点进详情页。 */
-    private VBox cardNode(ModrinthApi.Hit h) {
-        VBox card = new VBox(8);
+    /** 一张整合包卡片：背景为固定尺寸的 StackPane（高度锁死，不被文案撑高），内部图标+信息叠放其上。两列等宽、统一固定高度。 */
+    private StackPane cardNode(ModrinthApi.Hit h) {
+        StackPane card = new StackPane();
         card.setPadding(new Insets(10));
         card.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:10; -fx-border-radius:10;"
                 + "-fx-border-color:" + Ui.BORDER + "; -fx-border-width:1;");
         card.setMinWidth(0);
+        card.setPrefWidth(0);
         card.setMaxWidth(Double.MAX_VALUE);
+        // 背景层高度锁死为统一值：StackPane 固定尺寸后不随内部文案行数伸缩
+        card.setMinHeight(CARD_HEIGHT);
+        card.setPrefHeight(CARD_HEIGHT);
+        card.setMaxHeight(CARD_HEIGHT);
+        card.setAlignment(Pos.TOP_LEFT);
         card.setCursor(Cursor.HAND);
         card.setOnMouseClicked(e -> openDetailPage(h));
 
@@ -143,15 +144,31 @@ public class ModpackTab {
         iconView.setSmooth(true);
         Label titleLabel = new Label(h.title());
         titleLabel.setStyle("-fx-text-fill:" + Ui.TEXT + "; -fx-font-size:14px; -fx-font-weight:bold;");
+        titleLabel.setMaxWidth(Double.MAX_VALUE);
+        titleLabel.setMinHeight(20);
+        titleLabel.setPrefHeight(20); // 标题恒单行，高度锁死
         Label metaLabel = new Label("下载量 " + h.downloads()
                 + "    [" + String.join("/", h.categories()) + "]");
         metaLabel.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
+        metaLabel.setMaxWidth(Double.MAX_VALUE);
+        metaLabel.setMinHeight(16);
+        metaLabel.setPrefHeight(16); // 元信息恒单行，高度锁死
         Label descLabel = new Label(h.description());
         descLabel.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
         descLabel.setWrapText(true);
+        descLabel.setMaxWidth(Double.MAX_VALUE);
+        descLabel.setMinHeight(0);
+        descLabel.setPrefHeight(34);
+        descLabel.setMaxHeight(34); // 简介恒占两行位，超出截断
         VBox info = new VBox(2, titleLabel, metaLabel, descLabel);
+        info.setMaxWidth(Double.MAX_VALUE);
+        info.setMinHeight(74);
+        info.setPrefHeight(74);
+        info.setMaxHeight(74);
         HBox row = new HBox(10, iconView, info);
         row.setAlignment(Pos.CENTER_LEFT);
+        row.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(info, Priority.ALWAYS);
         card.getChildren().add(row);
 
         iconView.setImage(Ui.GRASS_BLOCK);

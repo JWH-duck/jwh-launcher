@@ -44,8 +44,8 @@ public final class MusicBar extends VBox {
     /** 认的扩展名：JavaFX Media 能直接播的几种。 */
     private static final String[] EXTS = {".mp3", ".m4a", ".aac", ".wav"};
 
-    /** 默认音量：在全量基础上两次下调 20%，0.8 × 0.8 = 0.64。 */
-    private static final double VOLUME = 0.65;
+    /** 固定音量：锁定在 20%（0.20），不提供音量调节入口，每首新歌都沿用该音量。 */
+    private static final double VOLUME = 0.20;
 
     /** 内置曲目所在的 classpath 目录。 */
     private static final String RES_DIR = "music/";
