@@ -17,7 +17,6 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
-import javafx.scene.control.ProgressBar;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.layout.HBox;
@@ -37,11 +36,26 @@ import java.util.List;
 public class DownloadView {
 
     private final LauncherApp app;
-    private final Label progressLabel = new Label("就绪");
-    private final ProgressBar progressBar = new ProgressBar(0);
-    private final Button cancelBtn = new Button("取消");
-    /** 当前进行中的下载控制（DownloadManager / CancelFlag / GameInstaller）；取消按钮操作它。 */
+    /** 当前进行中的下载控制；弹窗「取消」按钮操作它。 */
     private volatile com.jwh.launcher.util.Http.DownloadControl activeCtrl;
+    /** 下载进度弹窗（下载期间惰性创建，结束后关闭并置空）。 */
+    private DownloadProgressDialog dialog;
+    /** 下载进度转发到弹窗；搜索状态走全局状态栏，不进弹窗。 */
+    private final ProgressSink sink = new ProgressSink() {
+        @Override
+        public void message(String text) {
+            Platform.runLater(() -> {
+                if (dialog != null) dialog.setMessage(text);
+            });
+        }
+
+        @Override
+        public void progress(double frac) {
+            Platform.runLater(() -> {
+                if (dialog != null) dialog.setProgress(frac);
+            });
+        }
+    };
     private final VBox page = new VBox(8);
     private VersionManifest manifest;
     private ModrinthTab modTab;
@@ -55,31 +69,17 @@ public class DownloadView {
 
     public DownloadView(LauncherApp app) {
         this.app = app;
-        progressBar.setPrefWidth(260);
-        progressBar.setMaxWidth(Double.MAX_VALUE);
-        progressLabel.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:13px;");
-        progressLabel.setWrapText(true);
-        HBox.setHgrow(progressLabel, Priority.ALWAYS);
-        cancelBtn.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-text-fill:" + Ui.TEXT + ";");
-        cancelBtn.setVisible(false);
-        cancelBtn.setDisable(true);
-        cancelBtn.setOnAction(e -> {
-            var c = activeCtrl;
-            if (c != null) c.cancel();
-            progressLabel.setText("正在取消…");
-            cancelBtn.setDisable(true);
-        });
 
         TabPane tabs = new TabPane();
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
         tabs.setStyle("-fx-background-color:" + Ui.BG_LIGHT + ";");
 
         Tab versionTab = buildVersionTab();
-        modTab = new ModrinthTab(app, ModrinthTab.Type.MOD, progressBar, progressLabel, this::attachControl, this::detachControl);
-        shaderPackTab = new ModrinthTab(app, ModrinthTab.Type.SHADER, progressBar, progressLabel, this::attachControl, this::detachControl);
-        rpTab = new ModrinthTab(app, ModrinthTab.Type.RESOURCEPACK, progressBar, progressLabel, this::attachControl, this::detachControl);
-        shaderTab = new ShaderTab(app, progressBar, progressLabel, this::attachControl, this::detachControl);
-        modpackTab = new ModpackTab(app, progressBar, progressLabel, this::attachControl, this::detachControl);
+        modTab = new ModrinthTab(app, ModrinthTab.Type.MOD, sink, this::attachControl, this::detachControl);
+        shaderPackTab = new ModrinthTab(app, ModrinthTab.Type.SHADER, sink, this::attachControl, this::detachControl);
+        rpTab = new ModrinthTab(app, ModrinthTab.Type.RESOURCEPACK, sink, this::attachControl, this::detachControl);
+        shaderTab = new ShaderTab(app, sink, this::attachControl, this::detachControl);
+        modpackTab = new ModpackTab(app, sink, this::attachControl, this::detachControl);
         Tab modTabT = modTab.asTab();
         Tab shaderPackTabT = shaderPackTab.asTab();
         Tab shaderTabT = shaderTab.asTab();
@@ -96,25 +96,13 @@ public class DownloadView {
             javafx.application.Platform.runLater(() -> Ui.pageIn(c));
         });
 
-        HBox barRow = new HBox(10);
-        barRow.setAlignment(Pos.CENTER_LEFT);
-        barRow.getChildren().addAll(progressLabel, progressBar);
-        // 进度条占满整行宽度，右端与下方「取消」按钮右端对齐（满条=下载完成）
-        HBox.setHgrow(progressBar, Priority.ALWAYS);
-        HBox btnRow = new HBox();
-        btnRow.setAlignment(Pos.CENTER_RIGHT);
-        btnRow.getChildren().add(cancelBtn);
-        VBox progressRow = new VBox(6);
-        progressRow.getChildren().addAll(barRow, btnRow);
-        progressRow.setPadding(new Insets(0, 4, 0, 4));
-
         VBox.setVgrow(tabs, Priority.ALWAYS);
         // 内窗口圆角：面板与下方垫层同为 BG_LIGHT，弧线外露出的是垫层(同色)而非窗口底色，
         // 因此圆角四角无白三角/白边；圆角轮廓由深色边框线勾勒。
         page.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-background-radius:20; -fx-background-insets:0;"
                 + "-fx-border-radius:20; -fx-border-color:rgba(31,35,40,0.18);");
         page.setPadding(new Insets(12));
-        page.getChildren().addAll(tabs, progressRow);
+        page.getChildren().add(tabs);
     }
 
     public Node root() {
@@ -143,27 +131,34 @@ public class DownloadView {
     }
 
     private void setProgress(String text, double frac) {
-        Platform.runLater(() -> {
-            progressLabel.setText(text);
-            progressBar.setProgress(frac);
-        });
+        sink.message(text);
+        sink.progress(frac);
     }
 
-    /** 注册当前下载控制：显示「取消」按钮。下载结束必须调用 detachControl()。 */
+    /** 注册当前下载控制：打开下载进度弹窗。下载结束必须调用 detachControl()。 */
     public void attachControl(com.jwh.launcher.util.Http.DownloadControl ctl) {
         activeCtrl = ctl;
         Platform.runLater(() -> {
-            cancelBtn.setVisible(true);
-            cancelBtn.setDisable(false);
+            if (dialog == null) {
+                dialog = new DownloadProgressDialog(app, "下载进度", () -> {
+                    var c = activeCtrl;
+                    if (c != null) c.cancel();
+                });
+            }
+            dialog.show();
+            dialog.setMessage("准备下载…");
+            dialog.setProgress(Double.NaN);
         });
     }
 
-    /** 下载结束（成功/失败/取消）后清空控制并隐藏「取消」按钮。 */
+    /** 下载结束（成功/失败/取消）后清空控制并关闭进度弹窗。 */
     public void detachControl() {
         activeCtrl = null;
         Platform.runLater(() -> {
-            cancelBtn.setVisible(false);
-            cancelBtn.setDisable(true);
+            if (dialog != null) {
+                dialog.close();
+                dialog = null;
+            }
         });
     }
 
@@ -336,12 +331,8 @@ public class DownloadView {
         HBox.setHgrow(loaderVersionBox, Priority.ALWAYS);
         loaderRow.getChildren().addAll(new Label("加载器："), loaderPlatform, new Label("版本："), loaderVersionBox, refreshLoaderBtn);
 
-        Label hint2 = new Label("融合下载：先在列表选择游戏版本，再选加载器平台和版本，点「下载」会依次下载游戏版本并安装所选加载器；已装版本也可直接补装加载器。选「无（仅原版）」则只下载原版。Forge/NeoForge 安装时安装器需联网下载依赖，网络不通时建议改用 Fabric/Quilt。");
-        hint2.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
-        hint2.setWrapText(true);
-
         VBox.setVgrow(list, Priority.ALWAYS);
-        box.getChildren().addAll(row, loaderRow, list, hint2);
+        box.getChildren().addAll(row, loaderRow, list);
         return new Tab("游戏版本", box);
     }
 
@@ -428,7 +419,7 @@ public class DownloadView {
                 }
                 throw new RuntimeException(ex);
             }
-        }, s -> Platform.runLater(() -> progressLabel.setText(s)), ok -> {
+        }, s -> sink.message(s), ok -> {
             detachControl();
             btn.setDisable(false);
             setProgress(withLoader ? "下载与加载器安装完成" : "下载完成", 1);
@@ -464,7 +455,7 @@ public class DownloadView {
     /** 文件数进度 → 整体进度（满条=完成；只进不退，阶段切换不回退）。 */
     private void updateRealProgress(int done, int total) {
         if (total <= 0) {
-            Platform.runLater(() -> progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS));
+            sink.progress(Double.NaN);
             return;
         }
         double frac = overallStage[0] + overallStage[1] * Math.min(1.0, (double) done / total);
@@ -482,10 +473,8 @@ public class DownloadView {
         if (frac < overallLast) return; // 只进不退：跨批次/跨阶段不回退
         overallLast = frac;
         int pct = (int) Math.round(frac * 100);
-        Platform.runLater(() -> {
-            progressBar.setProgress(frac);
-            progressLabel.setText(overallStepLabel + " 整体进度 " + pct + "%");
-        });
+        sink.progress(frac);
+        sink.message(overallStepLabel + " 整体进度 " + pct + "%");
     }
 
     /** 安装加载器（供版本+加载器融合下载调用；复用加载器 Tab 的安装逻辑）。 */

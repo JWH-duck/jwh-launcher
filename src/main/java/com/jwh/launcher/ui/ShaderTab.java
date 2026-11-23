@@ -9,7 +9,6 @@ import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
-import javafx.scene.control.ProgressBar;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TextArea;
 import javafx.scene.layout.HBox;
@@ -29,8 +28,7 @@ import java.util.List;
 public class ShaderTab {
 
     private final LauncherApp app;
-    private final ProgressBar progressBar;
-    private final Label progressLabel;
+    private final ProgressSink sink;
     private final ComboBox<String> versionBox = new ComboBox<>();
     private final ComboBox<String> irisLoaderBox = new ComboBox<>();
     private final ComboBox<String> optifineBox = new ComboBox<>();
@@ -44,12 +42,11 @@ public class ShaderTab {
     private final java.util.function.Consumer<com.jwh.launcher.util.Http.DownloadControl> attachCtrl;
     private final Runnable detachCtrl;
 
-    public ShaderTab(LauncherApp app, ProgressBar progressBar, Label progressLabel,
+    public ShaderTab(LauncherApp app, ProgressSink sink,
                      java.util.function.Consumer<com.jwh.launcher.util.Http.DownloadControl> attachCtrl,
                      Runnable detachCtrl) {
         this.app = app;
-        this.progressBar = progressBar;
-        this.progressLabel = progressLabel;
+        this.sink = sink;
         this.attachCtrl = attachCtrl;
         this.detachCtrl = detachCtrl;
     }
@@ -62,8 +59,8 @@ public class ShaderTab {
             public void onBytes(long bytes) {
                 double frac = totalSize > 0
                         ? Math.min(1.0, (double) bytes / totalSize)
-                        : ProgressBar.INDETERMINATE_PROGRESS;
-                javafx.application.Platform.runLater(() -> progressBar.setProgress(frac));
+                        : Double.NaN;
+                javafx.application.Platform.runLater(() -> sink.progress(frac));
             }
 
             @Override
@@ -77,8 +74,8 @@ public class ShaderTab {
     private boolean endDownload(com.jwh.launcher.util.Http.DownloadControl ctl, Runnable onDone) {
         detachCtrl.run();
         if (ctl != null && ctl.isCancelled()) {
-            progressBar.setProgress(0);
-            progressLabel.setText("已取消");
+            sink.progress(0);
+            sink.message("已取消");
             return true;
         }
         onDone.run();
@@ -198,8 +195,8 @@ public class ShaderTab {
         }
         String loader = irisLoaderBox.getSelectionModel().getSelectedItem();
         btn.setDisable(true);
-        progressLabel.setText("正在获取 Iris…");
-        progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+        sink.message("正在获取 Iris…");
+        sink.progress(Double.NaN);
         com.jwh.launcher.util.Http.DownloadControl[] ctlRef = new com.jwh.launcher.util.Http.DownloadControl[1];
         Ui.async(() -> {
             List<ModrinthApi.Version> versions = new ModrinthApi().versions("iris", mc, loader);
@@ -214,14 +211,14 @@ public class ShaderTab {
         }, ok -> {
             endDownload(ctlRef[0], () -> {
                 btn.setDisable(false);
-                progressLabel.setText("Iris 安装完成");
-                progressBar.setProgress(1);
+                sink.message("Iris 安装完成");
+                sink.progress(1);
                 Ui.info("安装完成", "Iris " + loader + " 版已放入 " + target + " 的 mods 目录。\n再到\"光影包\"页下载光影包即可。");
             });
         }, err -> {
             endDownload(ctlRef[0], () -> {
                 btn.setDisable(false);
-                progressBar.setProgress(0);
+                sink.progress(0);
                 Ui.error("Iris 安装失败", err);
             });
         });
@@ -233,8 +230,7 @@ public class ShaderTab {
             Ui.error("未选择版本", "请先选择目标版本。");
             return;
         }
-        progressLabel.setText("正在查询 OptiFine 版本…");
-        progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+        app.setStatus("正在查询 OptiFine 版本…");
         Ui.async(() -> {
             List<ContentService.OptifineVersion> list = new ContentService(app.config).listOptifine(mc);
             Platform.runLater(() -> {
@@ -244,12 +240,11 @@ public class ShaderTab {
                 }
                 if (optifineBox.getItems().size() > 0) optifineBox.getSelectionModel().selectFirst();
                 app.setStatus("找到 " + list.size() + " 个 OptiFine 版本");
-                progressBar.setProgress(0);
             });
             return null;
         }, ok -> {
         }, err -> {
-            progressBar.setProgress(0);
+            app.setStatus("查询失败");
             Ui.error("查询失败", err);
         });
     }
@@ -261,8 +256,8 @@ public class ShaderTab {
             Ui.error("未选择", "请先选择目标版本并查询 OptiFine 版本。");
             return;
         }
-        progressLabel.setText("正在下载 " + sel + " …");
-        progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+        sink.message("正在下载 " + sel + " …");
+        sink.progress(Double.NaN);
         com.jwh.launcher.util.Http.DownloadControl[] ctlRef = new com.jwh.launcher.util.Http.DownloadControl[1];
         Ui.async2(() -> {
             List<ContentService.OptifineVersion> list = new ContentService(app.config).listOptifine(mc);
@@ -280,14 +275,14 @@ public class ShaderTab {
             return new ContentService(app.config).downloadOptifine(target.downloadUrl(), target.filename(), ctlRef[0]);
         }, jar -> {
             endDownload(ctlRef[0], () -> {
-                progressBar.setProgress(1);
-                progressLabel.setText("下载完成，正在启动安装器…");
+                sink.progress(1);
+                sink.message("下载完成，正在启动安装器…");
                 // 运行 OptiFine 安装器（GUI），用户点击 Install 后生成独立版本
                 runInstaller(jar);
             });
         }, err -> {
             endDownload(ctlRef[0], () -> {
-                progressBar.setProgress(0);
+                sink.progress(0);
                 Ui.error("下载失败", err);
             });
         });
@@ -304,7 +299,7 @@ public class ShaderTab {
         }
         try {
             new ProcessBuilder(java, "-jar", jar.toString()).start();
-            progressLabel.setText("安装器已启动，请在弹出的窗口中选择 Install");
+            sink.message("安装器已启动，请在弹出的窗口中选择 Install");
         } catch (Exception e) {
             Ui.error("启动安装器失败", e);
         }

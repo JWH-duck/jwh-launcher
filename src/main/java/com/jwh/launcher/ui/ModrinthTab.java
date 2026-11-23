@@ -15,7 +15,6 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
-import javafx.scene.control.ProgressBar;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TextField;
@@ -54,8 +53,7 @@ public class ModrinthTab {
 
     private final LauncherApp app;
     private final Type type;
-    private final ProgressBar progressBar;
-    private final Label progressLabel;
+    private final ProgressSink sink;
     private final ModrinthApi api = new ModrinthApi();
     private final ListView<ModrinthApi.Hit> list = new ListView<>();
     private final TextField searchBox = new TextField();
@@ -73,18 +71,17 @@ public class ModrinthTab {
     private final java.util.function.Consumer<com.jwh.launcher.util.Http.DownloadControl> attachCtrl;
     private final Runnable detachCtrl;
 
-    public ModrinthTab(LauncherApp app, Type type, ProgressBar progressBar, Label progressLabel,
+    public ModrinthTab(LauncherApp app, Type type, ProgressSink sink,
                        java.util.function.Consumer<com.jwh.launcher.util.Http.DownloadControl> attachCtrl,
                        Runnable detachCtrl) {
         this.app = app;
         this.type = type;
-        this.progressBar = progressBar;
-        this.progressLabel = progressLabel;
+        this.sink = sink;
         this.attachCtrl = attachCtrl;
         this.detachCtrl = detachCtrl;
     }
 
-    /** 真实字节进度控制：onBytes 回调自动转进度条（后台线程安全），支持取消。 */
+    /** 真实字节进度控制：onBytes 回调自动转进度弹窗（后台线程安全），支持取消。 */
     private com.jwh.launcher.util.Http.DownloadControl bytesControl(long totalSize) {
         com.jwh.launcher.util.Http.CancelFlag flag = new com.jwh.launcher.util.Http.CancelFlag();
         return new com.jwh.launcher.util.Http.DownloadControl() {
@@ -92,8 +89,8 @@ public class ModrinthTab {
             public void onBytes(long bytes) {
                 double frac = totalSize > 0
                         ? Math.min(1.0, (double) bytes / totalSize)
-                        : ProgressBar.INDETERMINATE_PROGRESS;
-                javafx.application.Platform.runLater(() -> progressBar.setProgress(frac));
+                        : Double.NaN;
+                sink.progress(frac);
             }
 
             @Override
@@ -107,8 +104,8 @@ public class ModrinthTab {
     private boolean endDownload(com.jwh.launcher.util.Http.DownloadControl ctl, Runnable onDone) {
         detachCtrl.run();
         if (ctl != null && ctl.isCancelled()) {
-            progressBar.setProgress(0);
-            progressLabel.setText("已取消");
+            sink.progress(0);
+            sink.message("已取消");
             return true;
         }
         onDone.run();
@@ -230,11 +227,6 @@ public class ModrinthTab {
         searchRow.setAlignment(Pos.CENTER_LEFT);
         searchRow.getChildren().addAll(searchBox, searchBtn, refreshBtn);
 
-        Label hint = new Label("下载后自动放入目标版本" +
-                (type == Type.MOD ? "的 mods 目录" : "的 resourcepacks 目录") + "；版本隔离开启时随版本隔离。");
-        hint.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
-        hint.setWrapText(true);
-
         searchBtn.setOnAction(e -> search());
         searchBox.setOnAction(e -> search());
         refreshBtn.setOnAction(e -> {
@@ -242,7 +234,7 @@ public class ModrinthTab {
             IconCache.resetFailures();   // 重置图标下载失败计数，重新尝试
             search();
         });
-        box.getChildren().addAll(top, searchRow, list, hint);
+        box.getChildren().addAll(top, searchRow, list);
         Tab tab = new Tab(type.label, box);
         // 进入下载界面第一时间自动加载热门列表，无需手动点搜索
         tab.selectedProperty().addListener((obs, was, now) -> {
@@ -326,8 +318,7 @@ public class ModrinthTab {
         String mc = selectedMc();
         String loader = type.loaderFilter ? selectedLoader() : null;
         list.getItems().clear();
-        progressLabel.setText("正在搜索…");
-        progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+        app.setStatus("正在搜索…");
 
         if ("CurseForge".equals(sourceBox.getValue())) {
             searchCurseForge(q, mc, loader);
@@ -338,7 +329,6 @@ public class ModrinthTab {
             Platform.runLater(() -> {
                 list.getItems().setAll(merged);
                 app.setStatus("找到 " + merged.size() + " 个结果");
-                progressBar.setProgress(0);
                 if (merged.isEmpty()) {
                     Ui.info("没有找到结果",
                             "「" + (q.isBlank() ? "（空关键词）" : q) + "」在 " + (mc == null ? "全部版本" : mc)
@@ -350,7 +340,7 @@ public class ModrinthTab {
             return null;
         }, ok -> {
         }, err -> {
-            progressBar.setProgress(0);
+            app.setStatus("搜索失败");
             Ui.error("搜索失败", err);
         });
     }
@@ -369,7 +359,7 @@ public class ModrinthTab {
         for (String key : keys) {
             if (key == null) continue;
             try {
-                for (ModrinthApi.Hit h : api.search(key, apiType(), mc, loader, 30)) {
+                for (ModrinthApi.Hit h : api.search(key, apiType(), mc, loader, 60)) {
                     if (seen.add(h.projectId())) merged.add(h);
                 }
             } catch (Exception ex) {
@@ -388,7 +378,6 @@ public class ModrinthTab {
     private void searchCurseForge(String q, String mc, String loader) {
         CurseForgeApi cf = new CurseForgeApi(CurseForgeKey.get());
         if (!cf.hasKey()) {
-            progressBar.setProgress(0);
             openCurseForgeWeb(q, mc);
             Ui.info("需要 CurseForge API Key",
                     "已为你打开 CurseForge 网页搜索。\n\n想用启动器内搜索下载，需要免费申请 Key：\n1. 打开 https://console.curseforge.com 用 CurseForge 账号登录\n2. 点击 My API Key 生成\n3. 设置环境变量 JWH_CURSEFORGE_API_KEY（PCL 同款机制，启动器内不显示 Key）后重新启动启动器");
@@ -404,7 +393,7 @@ public class ModrinthTab {
             for (String key : keys) {
                 if (key == null) continue;
                 try {
-                    for (CurseForgeApi.Hit h : cf.search(key, mc, curseForgeClassId(), loader, 30)) {
+                    for (CurseForgeApi.Hit h : cf.search(key, mc, curseForgeClassId(), loader, 50)) {
                         if (seen.add(h.projectId())) {
                             merged.add(new ModrinthApi.Hit(h.projectId(), "", h.title(), h.description(),
                                     h.logoUrl(), h.downloads(), new ArrayList<>()));
@@ -418,7 +407,6 @@ public class ModrinthTab {
             Platform.runLater(() -> {
                 list.getItems().setAll(merged);
                 app.setStatus("找到 " + merged.size() + " 个结果");
-                progressBar.setProgress(0);
                 if (merged.isEmpty()) {
                     Ui.info("没有找到结果",
                             "「" + (q.isBlank() ? "（空关键词）" : q) + "」在 " + (mc == null ? "全部版本" : mc)
@@ -428,7 +416,7 @@ public class ModrinthTab {
             return null;
         }, ok -> {
         }, err -> {
-            progressBar.setProgress(0);
+            app.setStatus("CurseForge 搜索失败");
             Ui.error("CurseForge 搜索失败", err);
         });
     }
@@ -593,16 +581,6 @@ public class ModrinthTab {
         verHint.setWrapText(true);
         verHint.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
 
-        // 下载进度与状态：无下载任务时整体隐藏；状态文案本页独立，避免串到下载中心的搜索提示
-        ProgressBar bar = new ProgressBar(0);
-        bar.setMaxWidth(Double.MAX_VALUE);
-        bar.setVisible(false);
-        bar.setManaged(false);
-        Label status = new Label("");
-        status.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:13px;");
-        status.setVisible(false);
-        status.setManaged(false);
-
         Button downloadBtn = new Button("下载");
         downloadBtn.setStyle("-fx-background-color:" + Ui.ACCENT + "; -fx-text-fill:white;"
                 + " -fx-font-weight:bold; -fx-padding:8 26;");
@@ -622,14 +600,13 @@ public class ModrinthTab {
         VBox.setVgrow(footSpacer, Priority.ALWAYS);
 
         page.getChildren().addAll(head, desc, new Separator(), sec, targetRow, adaptHint,
-                verSec, verList, verHint, new Separator(), status, bar, footSpacer, actionRow);
+                verSec, verList, verHint, new Separator(), footSpacer, actionRow);
 
         javafx.scene.layout.StackPane wrap = new javafx.scene.layout.StackPane(page);
         wrap.setStyle("-fx-background-color:" + Ui.BG_LIGHT + ";");
         app.showFullPage("下载 " + ModNames.display(hit.slug(), hit.title()), wrap);
 
         backBtn.setOnAction(e -> {
-            status.textProperty().unbind();
             app.showDownload();
         });
 
@@ -747,14 +724,8 @@ public class ModrinthTab {
                 Ui.error("没有可用版本", hit.title() + " 没有与所选实例匹配的下载版本。");
                 return;
             }
-            progressBar.setProgress(0);
-            progressLabel.setText("就绪");
-            // 有下载任务才显示进度条与状态行
-            status.setManaged(true);
-            status.setVisible(true);
-            bar.setManaged(true);
-            bar.setVisible(true);
-            status.textProperty().bind(progressLabel.textProperty());
+            sink.progress(0);
+            sink.message("就绪");
             doDownload(hit, mc, loader, id, picked);
         });
     }
@@ -797,8 +768,8 @@ public class ModrinthTab {
                 Ui.error("未配置 Key", "请通过环境变量 JWH_CURSEFORGE_API_KEY 配置 CurseForge API Key 后再下载（PCL 同款机制）。");
                 return;
             }
-            progressLabel.setText("正在解析 CurseForge 下载地址…");
-            progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+            sink.message("正在解析 CurseForge 下载地址…");
+            sink.progress(Double.NaN);
             com.jwh.launcher.util.Http.DownloadControl[] ctlRef = new com.jwh.launcher.util.Http.DownloadControl[1];
             Ui.async2(() -> {
                 CurseForgeApi.File f = cf.pickFile(hit.projectId(), mc, loader);
@@ -813,22 +784,22 @@ public class ModrinthTab {
                 return f.filename();
             }, fn -> {
                 endDownload(ctlRef[0], () -> {
-                    progressLabel.setText("下载完成：" + fn);
-                    progressBar.setProgress(1);
+                    sink.message("下载完成：" + fn);
+                    sink.progress(1);
                     Ui.info("下载完成", type.label + " 已放入目标版本 " + target + " 的 " + subdirLabel()
                             + " 目录。\n可在主页启动该版本后使用。");
                 });
             }, err -> {
                 endDownload(ctlRef[0], () -> {
-                    progressBar.setProgress(0);
+                    sink.progress(0);
                     Ui.error("下载失败", err);
                 });
             });
             return;
         }
 
-        progressLabel.setText("正在查询可用版本…");
-        progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+        sink.message("正在查询可用版本…");
+        sink.progress(Double.NaN);
         Ui.async2(() -> {
             // 详情页已明确选中版本时直接使用，绝不回退到其他加载器/游戏版本
             if (picked != null) return picked;
@@ -837,14 +808,14 @@ public class ModrinthTab {
             return vers.isEmpty() ? null : vers.get(0);
         }, v -> {
             if (v == null) {
-                progressBar.setProgress(0);
+                sink.progress(0);
                 Ui.error("没有可用版本", hit.title() + " 没有适配 " + mc
                         + (type == Type.MOD ? " 与所选加载器" : "") + " 的版本。");
                 return;
             }
             ModrinthApi.File f = v.primaryFile();
             if (f == null) {
-                progressBar.setProgress(0);
+                sink.progress(0);
                 Ui.error("无下载文件", "该版本没有可下载的文件。");
                 return;
             }
@@ -852,8 +823,8 @@ public class ModrinthTab {
                 downloadWithDependencies(hit, mc, loader, v, f, target);
                 return;
             }
-            progressLabel.setText("正在下载 " + f.filename() + " …");
-            progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+            sink.message("正在下载 " + f.filename() + " …");
+            sink.progress(Double.NaN);
             long totalSize = f.size();
             com.jwh.launcher.util.Http.DownloadControl ctl = bytesControl(totalSize);
             attachCtrl.accept(ctl);
@@ -862,19 +833,19 @@ public class ModrinthTab {
                 return null;
             }, ok2 -> {
                 endDownload(ctl, () -> {
-                    progressLabel.setText("下载完成：" + f.filename());
-                    progressBar.setProgress(1);
+                    sink.message("下载完成：" + f.filename());
+                    sink.progress(1);
                     Ui.info("下载完成", type.label + " 已放入目标版本 " + target + " 的 " + subdirLabel()
                             + " 目录。\n可在主页启动该版本后使用。");
                 });
             }, err -> {
                 endDownload(ctl, () -> {
-                    progressBar.setProgress(0);
+                    sink.progress(0);
                     Ui.error("下载失败", err);
                 });
             });
         }, err -> {
-            progressBar.setProgress(0);
+            sink.progress(0);
             Ui.error("查询版本失败", err);
         });
     }
@@ -889,8 +860,8 @@ public class ModrinthTab {
      */
     private void downloadWithDependencies(ModrinthApi.Hit hit, String mc, String loader,
                                           ModrinthApi.Version v, ModrinthApi.File mainFile, String target) {
-        progressLabel.setText("正在检查前置依赖…");
-        progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+        sink.message("正在检查前置依赖…");
+        sink.progress(Double.NaN);
         Ui.async2(() -> {
             // 主 Mod 自身不参与前置收集：先把它标记为已处理，再显式遍历它的 required 前置链
             java.util.Set<String> handled = new java.util.LinkedHashSet<>();
@@ -921,7 +892,7 @@ public class ModrinthTab {
                 startDownloads(new DepPlan(new ArrayList<>(), new ArrayList<>()), target, mainFile);
             }
         }, err -> {
-            progressBar.setProgress(0);
+            sink.progress(0);
             Ui.error("检查前置失败", err);
         });
     }
@@ -983,8 +954,8 @@ public class ModrinthTab {
     private void startDownloads(DepPlan plan, String target, ModrinthApi.File mainFile) {
         List<ModrinthApi.File> all = new ArrayList<>(plan.depFiles());
         all.add(mainFile);
-        progressLabel.setText("正在下载 " + all.size() + " 个文件…");
-        progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+        sink.message("正在下载 " + all.size() + " 个文件…");
+        sink.progress(Double.NaN);
         com.jwh.launcher.util.Http.DownloadControl ctl = bytesControl(-1);
         attachCtrl.accept(ctl);
         Ui.async2(() -> {
@@ -996,21 +967,21 @@ public class ModrinthTab {
                 done++;
                 final int d = done;
                 javafx.application.Platform.runLater(() -> {
-                    progressLabel.setText("正在下载 " + f.filename() + "（" + d + "/" + all.size() + "）");
-                    progressBar.setProgress((double) d / all.size());
+                    sink.message("正在下载 " + f.filename() + "（" + d + "/" + all.size() + "）");
+                    sink.progress((double) d / all.size());
                 });
             }
             return done;
         }, n -> {
             endDownload(ctl, () -> {
-                progressLabel.setText("下载完成：" + n + " 个文件");
-                progressBar.setProgress(1);
+                sink.message("下载完成：" + n + " 个文件");
+                sink.progress(1);
                 Ui.info("下载完成", type.label + " 与前置已放入目标版本 " + target + " 的 " + subdirLabel()
                         + " 目录。\n可在主页启动该版本后使用。");
             });
         }, err -> {
             endDownload(ctl, () -> {
-                progressBar.setProgress(0);
+                sink.progress(0);
                 Ui.error("下载失败", err);
             });
         });

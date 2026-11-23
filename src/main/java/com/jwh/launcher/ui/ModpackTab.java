@@ -12,7 +12,6 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
-import javafx.scene.control.ProgressBar;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TextField;
@@ -32,8 +31,7 @@ import java.util.List;
 public class ModpackTab {
 
     private final LauncherApp app;
-    private final ProgressBar progressBar;
-    private final Label progressLabel;
+    private final ProgressSink sink;
     private final ModrinthApi api = new ModrinthApi();
     private final ListView<ModrinthApi.Hit> list = new ListView<>();
     private final TextField searchBox = new TextField();
@@ -43,12 +41,11 @@ public class ModpackTab {
     private final java.util.function.Consumer<com.jwh.launcher.util.Http.DownloadControl> attachCtrl;
     private final Runnable detachCtrl;
 
-    public ModpackTab(LauncherApp app, ProgressBar progressBar, Label progressLabel,
+    public ModpackTab(LauncherApp app, ProgressSink sink,
                       java.util.function.Consumer<com.jwh.launcher.util.Http.DownloadControl> attachCtrl,
                       Runnable detachCtrl) {
         this.app = app;
-        this.progressBar = progressBar;
-        this.progressLabel = progressLabel;
+        this.sink = sink;
         this.attachCtrl = attachCtrl;
         this.detachCtrl = detachCtrl;
     }
@@ -133,11 +130,6 @@ public class ModpackTab {
         top.setAlignment(Pos.CENTER_LEFT);
         top.getChildren().addAll(searchBox, searchBtn, refreshBtn);
 
-        Label hint = new Label("整合包为 Modrinth 平台 .mrpack 格式。安装后自动创建独立版本实例（含所需加载器与全部 Mod），"
-                + "返回主页即可启动；同一整合包不会重复安装。");
-        hint.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
-        hint.setWrapText(true);
-
         searchBtn.setOnAction(e -> search());
         searchBox.setOnAction(e -> search());
         refreshBtn.setOnAction(e -> {
@@ -145,7 +137,7 @@ public class ModpackTab {
             search();
         });
 
-        box.getChildren().addAll(top, list, hint);
+        box.getChildren().addAll(top, list);
         Tab tab = new Tab("整合包", box);
         // 首次进入自动加载热门整合包
         tab.selectedProperty().addListener((obs, was, now) -> {
@@ -159,14 +151,12 @@ public class ModpackTab {
     private void search() {
         String q = searchBox.getText().trim();
         list.getItems().clear();
-        progressLabel.setText("正在搜索整合包…");
-        progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+        app.setStatus("正在搜索整合包…");
         Ui.async(() -> {
-            List<ModrinthApi.Hit> hits = api.search(q, ModrinthApi.Type.MODPACK, null, null, 30);
+            List<ModrinthApi.Hit> hits = api.search(q, ModrinthApi.Type.MODPACK, null, null, 60);
             Platform.runLater(() -> {
                 list.getItems().setAll(hits);
                 app.setStatus("找到 " + hits.size() + " 个整合包");
-                progressBar.setProgress(0);
                 if (hits.isEmpty()) {
                     Ui.info("没有找到结果", "「" + (q.isBlank() ? "（空关键词）" : q)
                             + "」没有匹配的整合包。\n试试更短的关键词（如 vault、skyblock）。");
@@ -175,7 +165,7 @@ public class ModpackTab {
             return null;
         }, ok -> {
         }, err -> {
-            progressBar.setProgress(0);
+            app.setStatus("搜索失败");
             Ui.error("搜索失败", err);
         });
     }
@@ -273,16 +263,6 @@ public class ModpackTab {
         pickHint.setWrapText(true);
         pickHint.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
 
-        ProgressBar bar = new ProgressBar(0);
-        bar.setMaxWidth(Double.MAX_VALUE);
-        bar.setVisible(false);
-        bar.setManaged(false);
-        Label status = new Label("");
-        status.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:13px;");
-        status.setVisible(false);
-        status.setManaged(false);
-        bar.progressProperty().bind(progressBar.progressProperty());
-
         Button installBtn = new Button("安装");
         installBtn.setStyle("-fx-background-color:" + Ui.ACCENT + "; -fx-text-fill:white;"
                 + " -fx-font-weight:bold; -fx-padding:8 26;");
@@ -297,21 +277,18 @@ public class ModpackTab {
         VBox.setVgrow(footSpacer, Priority.ALWAYS);
 
         page.getChildren().addAll(head, desc, new Separator(), sec, verList, pickHint,
-                new Separator(), status, bar, footSpacer, actionRow);
+                new Separator(), footSpacer, actionRow);
 
         javafx.scene.layout.StackPane wrap = new javafx.scene.layout.StackPane(page);
         wrap.setStyle("-fx-background-color:" + Ui.BG_LIGHT + ";");
         app.showFullPage("安装整合包 " + hit.title(), wrap);
 
         backBtn.setOnAction(e -> {
-            status.textProperty().unbind();
             app.showDownload();
         });
 
-        progressLabel.setText("正在读取可用版本…");
-        progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+        app.setStatus("正在读取可用版本…");
         Ui.async2(() -> api.allVersions(hit.projectId()), vers -> {
-            progressBar.setProgress(0);
             List<ModrinthApi.Version> sorted = new ArrayList<>(vers);
             // 按发布日期倒序：最新发布的排最前，进页面默认选中最新版本
             sorted.sort((a, b) -> b.datePublished() == a.datePublished()
@@ -328,8 +305,7 @@ public class ModpackTab {
                 pickHint.setText("该整合包暂无可下载版本。");
             }
         }, err -> {
-            progressBar.setProgress(0);
-            progressLabel.setText("读取版本失败");
+            app.setStatus("读取版本失败");
             pickHint.setText("版本列表读取失败：" + err.getMessage());
             Ui.error("读取版本失败", err);
         });
@@ -340,13 +316,8 @@ public class ModpackTab {
                 Ui.error("未选择版本", "请先在上方选择整合包版本。");
                 return;
             }
-            progressBar.setProgress(0);
-            progressLabel.setText("就绪");
-            status.setManaged(true);
-            status.setVisible(true);
-            bar.setManaged(true);
-            bar.setVisible(true);
-            status.textProperty().bind(progressLabel.textProperty());
+            sink.progress(0);
+            sink.message("就绪");
             installPack(hit, ver);
         });
     }
@@ -360,8 +331,8 @@ public class ModpackTab {
     }
 
     private void installPack(ModrinthApi.Hit hit, ModrinthApi.Version ver) {
-        progressLabel.setText("正在安装整合包…");
-        progressBar.setProgress(ProgressBar.INDETERMINATE_PROGRESS);
+        sink.message("正在安装整合包…");
+        sink.progress(Double.NaN);
         com.jwh.launcher.util.Http.DownloadControl ctl = new com.jwh.launcher.util.Http.CancelFlag();
         attachCtrl.accept(ctl);
         Ui.async2(() -> {
@@ -371,10 +342,10 @@ public class ModpackTab {
                 @Override
                 public void onProgress(String step, int done, int total) {
                     javafx.application.Platform.runLater(() -> {
-                        progressLabel.setText(step + (total > 0 ? "  整体进度 " + Math.round(done * 100.0 / total) + "%" : ""));
-                        progressBar.setProgress(total > 0
+                        sink.message(step + (total > 0 ? "  整体进度 " + Math.round(done * 100.0 / total) + "%" : ""));
+                        sink.progress(total > 0
                                 ? Math.min(1.0, (double) done / total)
-                                : ProgressBar.INDETERMINATE_PROGRESS);
+                                : Double.NaN);
                     });
                 }
 
@@ -382,31 +353,31 @@ public class ModpackTab {
                 public void onBytes(String step, long bytesDone, long bytesTotal) {
                     if (bytesTotal <= 0) return;
                     javafx.application.Platform.runLater(() -> {
-                        progressBar.setProgress(Math.min(1.0, (double) bytesDone / bytesTotal));
-                        progressLabel.setText(step + "  整体进度 " + Math.round(bytesDone * 100.0 / bytesTotal) + "%");
+                        sink.progress(Math.min(1.0, (double) bytesDone / bytesTotal));
+                        sink.message(step + "  整体进度 " + Math.round(bytesDone * 100.0 / bytesTotal) + "%");
                     });
                 }
             });
         }, id -> {
             detachCtrl.run();
             if (ctl.isCancelled()) {
-                progressBar.setProgress(0);
-                progressLabel.setText("已取消");
+                sink.progress(0);
+                sink.message("已取消");
                 return;
             }
-            progressLabel.setText("整合包安装完成：" + id);
-            progressBar.setProgress(1);
+            sink.message("整合包安装完成：" + id);
+            sink.progress(1);
             app.refreshAll();
             Ui.info("安装完成", "整合包「" + hit.title() + "」已安装为独立版本「" + id + "」。\n"
                     + "包含所需加载器与全部 Mod，返回主页选择该版本即可启动。");
         }, err -> {
             detachCtrl.run();
             if (ctl.isCancelled()) {
-                progressBar.setProgress(0);
-                progressLabel.setText("已取消");
+                sink.progress(0);
+                sink.message("已取消");
                 return;
             }
-            progressBar.setProgress(0);
+            sink.progress(0);
             Ui.error("安装失败", err);
         });
     }
