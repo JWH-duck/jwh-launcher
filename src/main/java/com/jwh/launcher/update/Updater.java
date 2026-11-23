@@ -914,12 +914,14 @@ public class Updater {
         String relJar = MAIN_JAR_REL.replace('/', '\\');
         String relNew = ".jwh-update\\update-" + version + ".jar";
         String relPrev = ".jwh-update\\prev.jar";
+        // timeout/taskkill 使用 System32 全路径，避免依赖系统 PATH（PATH 损坏时找不到外部命令）。
+        String sys = "%SystemRoot%\\System32";
         return "@echo off\r\n"
                 + "cd /d \"%~dp0\"\r\n"
                 + "echo " + System.currentTimeMillis() + " jar-start > \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
-                + "timeout /t 2 /nobreak >nul\r\n"
-                + "taskkill /f /im JWH-Launcher.exe >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
-                + "timeout /t 1 /nobreak >nul\r\n"
+                + sys + "\\timeout.exe /t 2 /nobreak >nul\r\n"
+                + sys + "\\taskkill.exe /f /im JWH-Launcher.exe >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + sys + "\\timeout.exe /t 1 /nobreak >nul\r\n"
                 + "copy /y /b \"" + relJar + "\" \"" + relPrev + "\" >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
                 + "copy /y /b \"" + relNew + "\" \"" + relJar + "\" >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
                 + "if errorlevel 1 (\r\n"
@@ -932,7 +934,8 @@ public class Updater {
                 + ")\r\n"
                 + "rd /s /q \".jwh-update\" >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
                 + "start \"\" \"JWH-Launcher.exe\"\r\n"
-                + "del \"%~f0\"\r\n";
+                + "del \"%~f0\"\r\n"
+                + "exit /b 0\r\n";
     }
 
     /** 全量覆盖脚本：关闭进程 → 解压内容覆盖整目录 → 清理临时目录 → 重启。 */
@@ -944,16 +947,18 @@ public class Updater {
 
     /** 生成全量覆盖脚本文本（抽成静态方法便于离线审查）。 */
     static String buildFullBat(String version) {
+        String sys = "%SystemRoot%\\System32";
         return "@echo off\r\n"
                 + "cd /d \"%~dp0\"\r\n"
                 + "echo " + System.currentTimeMillis() + " start > \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
-                + "timeout /t 2 /nobreak >nul\r\n"
-                + "taskkill /f /im JWH-Launcher.exe >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
-                + "timeout /t 1 /nobreak >nul\r\n"
+                + sys + "\\timeout.exe /t 2 /nobreak >nul\r\n"
+                + sys + "\\taskkill.exe /f /im JWH-Launcher.exe >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
+                + sys + "\\timeout.exe /t 1 /nobreak >nul\r\n"
                 + "xcopy /e /y /q /h \".jwh-update\\extract-" + version + "\\*\" \".\" >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
                 + "rd /s /q \".jwh-update\" >> \"%TEMP%\\jwh-update.log\" 2>&1\r\n"
                 + "start \"\" \"JWH-Launcher.exe\"\r\n"
-                + "del \"%~f0\"\r\n";
+                + "del \"%~f0\"\r\n"
+                + "exit /b 0\r\n";
     }
 
     private static void unzip(Path zip, Path out) throws IOException {
