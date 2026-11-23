@@ -351,8 +351,8 @@ public class SkinCanvas extends Canvas {
         // slim 只收窄模型，贴图 UV 区仍是 4 像素宽，两者不能混用
         int armW = slim ? 3 : 4;
         if (slim) {
-            addSlimArm(2, -4 - armW, 12, -2, armW, 12, 4, 44, 16, false);
-            addSlimArm(3, 4, 12, -2, armW, 12, 4, 36, 48, false);
+            addSlimArm(2, -4 - armW, 12, -2, armW, 12, 4, 40, 16, false);
+            addSlimArm(3, 4, 12, -2, armW, 12, 4, 32, 48, false);
         } else {
             addBox(2, -4 - armW, 12, -2, armW, 12, 4, 40, 16, 4, 12, 4, false);
             addBox(3, 4, 12, -2, armW, 12, 4, 32, 48, 4, 12, 4, false);
