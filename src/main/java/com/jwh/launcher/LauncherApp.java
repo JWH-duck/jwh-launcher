@@ -1772,7 +1772,7 @@ public class LauncherApp extends Application {
     }
 
     public void refreshAll() {
-        homeView.refresh();
+        if (homeView != null) homeView.refresh();
         if (downloadView != null) downloadView.refresh();
         refreshAccountButton();
     }

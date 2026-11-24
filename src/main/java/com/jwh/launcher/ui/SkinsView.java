@@ -70,6 +70,9 @@ public class SkinsView {
     private Button wideBtn;
     private Button slimBtn;
     private javafx.scene.control.CheckBox capeBox;
+    /** 披风本地选择/更换按钮；移除按钮仅在已绑披风时可见。 */
+    private Button capePickBtn;
+    private Button capeClearBtn;
     /** 皮肤站同步防重入：refresh() 末尾会触发同步，同步完成又调 refresh()，不拦住会无限循环。 */
     private boolean lsSyncing;
     /** 上次同步过的账号指纹（uuid|皮肤文件|披风文件），相同就不再发请求。 */
@@ -100,11 +103,9 @@ public class SkinsView {
         return "-fx-background-color:transparent; -fx-background-radius:8; -fx-padding:2;";
     }
 
-    /** 深色背景（图片/透明模式）用白色线稿，浅色背景用深色线稿，保证图标始终看得见。 */
+    /** 启动器三种背景（默认夜景/图片/透明）均为深色界面，走动按钮统一用白色线稿，保证深底可见。 */
     private Image pickWalkIcon() {
-        String mode = (this.app != null && this.app.config != null) ? this.app.config.bgMode : null;
-        boolean dark = "image".equals(mode) || "transparent".equals(mode);
-        Image ic = dark ? Ui.WALK_LIGHT : Ui.WALK_DARK;
+        Image ic = Ui.WALK_LIGHT;
         return ic != null ? ic : Ui.WALK_DARK;
     }
 
@@ -296,9 +297,19 @@ public class SkinsView {
         this.capeBox.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
         this.capeBox.setOnAction(e -> this.toggleCape(this.capeBox.isSelected()));
 
+        this.capePickBtn = new Button("选择披风");
+        this.capePickBtn.setStyle(modelBtnStyle(false));
+        this.capePickBtn.setCursor(Cursor.HAND);
+        this.capePickBtn.setOnAction(e -> this.importCape());
+        this.capeClearBtn = new Button("移除");
+        this.capeClearBtn.setStyle(modelBtnStyle(false));
+        this.capeClearBtn.setCursor(Cursor.HAND);
+        this.capeClearBtn.setOnAction(e -> this.removeCape());
+        this.capeClearBtn.setVisible(false);
+
         Region sp = new Region();
         HBox.setHgrow(sp, Priority.ALWAYS);
-        HBox bar = new HBox(6.0, new Node[]{tag, this.wideBtn, this.slimBtn, sp, this.capeBox});
+        HBox bar = new HBox(6.0, new Node[]{tag, this.wideBtn, this.slimBtn, sp, this.capeBox, this.capePickBtn, this.capeClearBtn});
         bar.setAlignment(Pos.CENTER_LEFT);
         return bar;
     }
@@ -328,14 +339,14 @@ public class SkinsView {
         this.slimBtn.setStyle(this.modelBtnStyle(slim));
     }
 
-    /** 披风开关：勾上就把账号名下的披风文件画出来，取消则移除。 */
+    /** 披风开关：勾上就把账号名下的披风文件画出来，取消则移除。没绑披风时点勾直接进入本地导入。 */
     private void toggleCape(boolean on) {
         LauncherConfig.Account acc = this.currentAccount();
         if (on) {
             Path cape = this.capePath(acc);
             if (cape == null) {
                 this.capeBox.setSelected(false);
-                this.setTip("当前账号还没有披风文件：用 LittleSkin 账号登录后会自动从皮肤站同步。");
+                this.importCape();
                 return;
             }
             if (!this.preview.setCape(cape)) {
@@ -361,6 +372,70 @@ public class SkinsView {
         // 皮肤站同步的披风落在 skins/library/ 下，同样按文件名找
         Path p2 = this.libraryDir().resolve(acc.capeFile);
         return Files.isRegularFile(p2) ? p2 : null;
+    }
+
+    /** 本地导入一张披风 PNG 并绑到当前账号（无账号时 ensureAccount 兜底补离线身份）。 */
+    private void importCape() {
+        LauncherConfig.Account acc = this.ensureAccount();
+        if (acc.uuid == null || acc.uuid.isBlank()) {
+            Ui.error("选择披风失败", "当前账号缺少 UUID，无法绑定本地披风。");
+            return;
+        }
+        FileChooser fc = new FileChooser();
+        fc.setTitle("选择披风 PNG（64×32 或 64×64）");
+        fc.getExtensionFilters().addAll(new FileChooser.ExtensionFilter[]{
+                new FileChooser.ExtensionFilter("披风图片", new String[]{"*.png"}),
+                new FileChooser.ExtensionFilter("所有文件", new String[]{"*.*"})});
+        File f = fc.showOpenDialog(null);
+        if (f == null) {
+            return;
+        }
+        try {
+            try (InputStream in = Files.newInputStream(f.toPath())) {
+                Image img = new Image(in);
+                if (img == null || img.isError()) {
+                    this.setTip("这张图片无法读取，请换一张 PNG 披风。");
+                    return;
+                }
+                int iw = (int) Math.round(img.getWidth());
+                int ih = (int) Math.round(img.getHeight());
+                if (iw != 64 || (ih != 32 && ih != 64)) {
+                    this.setTip("这张披风图不是标准尺寸（需要 64×32 或 64×64）。");
+                    return;
+                }
+            }
+            Path libDir = this.libraryDir();
+            Files.createDirectories(libDir, new FileAttribute[0]);
+            String nick = (acc.displayName == null || acc.displayName.isBlank()) ? "Steve" : acc.displayName;
+            String base = nick + "-cape";
+            Path dst = libDir.resolve(base + ".png");
+            int i = 2;
+            while (Files.exists(dst, new LinkOption[0])) {
+                dst = libDir.resolve(base + " (" + i + ").png");
+                ++i;
+            }
+            Files.copy(f.toPath(), dst, new CopyOption[0]);
+            dst.toFile().setWritable(true);
+            acc.capeFile = dst.getFileName().toString();
+            com.jwh.launcher.config.ConfigManager.save(this.app.config);
+            this.refresh();
+            this.app.refreshAll();
+            this.app.showToast("已绑定披风：" + dst.getFileName());
+        } catch (Exception ex) {
+            Ui.error("导入披风失败", ex);
+        }
+    }
+
+    /** 解绑当前账号的本地披风（库里的披风文件保留，仅取消绑定）。 */
+    private void removeCape() {
+        LauncherConfig.Account acc = this.currentAccount();
+        if (acc != null) {
+            acc.capeFile = "";
+            com.jwh.launcher.config.ConfigManager.save(this.app.config);
+        }
+        this.preview.clearCape();
+        this.refresh();
+        this.app.showToast("已移除当前账号的披风。");
     }
 
     private static void openUrl(String url) {
@@ -516,6 +591,12 @@ public class SkinsView {
             this.capeBox.setText(hasCape ? "披风" : "披风（无）");
             this.capeBox.setSelected(hasCape);
             this.capeBox.setVisible(true);
+            if (this.capePickBtn != null) {
+                this.capePickBtn.setText(hasCape ? "更换披风" : "选择披风");
+            }
+            if (this.capeClearBtn != null) {
+                this.capeClearBtn.setVisible(hasCape);
+            }
             if (!hasCape) {
                 this.preview.clearCape();
             }

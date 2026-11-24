@@ -27,11 +27,13 @@ public class SkinServer {
     private final HttpServer server;
     private final Path skinsDir;
     private final Function<String, String> nameLookup; // uuid(无横杠) -> 玩家名
+    private final Function<String, Path> capeLookup; // uuid(无横杠) -> 披风文件路径，无则 null
     private final int port;
 
-    public SkinServer(Path skinsDir, Function<String, String> nameLookup) throws IOException {
+    public SkinServer(Path skinsDir, Function<String, String> nameLookup, Function<String, Path> capeLookup) throws IOException {
         this.skinsDir = skinsDir;
         this.nameLookup = nameLookup;
+        this.capeLookup = capeLookup;
         Files.createDirectories(skinsDir);
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", this::handle);
@@ -62,6 +64,10 @@ public class SkinServer {
             String method = ex.getRequestMethod();
             if ("GET".equals(method) && path.startsWith("/skins/")) {
                 serveSkin(ex, path);
+                return;
+            }
+            if ("GET".equals(method) && path.startsWith("/capes/")) {
+                serveCape(ex, path);
                 return;
             }
             if ("GET".equals(method) && (path.equals("/api/yggdrasil") || path.equals("/api/yggdrasil/"))) {
@@ -123,19 +129,28 @@ public class SkinServer {
         String name = nameLookup == null ? null : nameLookup.apply(uuidNoDash);
         if (name == null || name.isBlank()) name = "Steve";
         boolean hasSkin = Files.isRegularFile(skinsDir.resolve(uuidNoDash + ".png"));
-        respond(ex, 200, "application/json; charset=utf-8", profileJson(uuidNoDash, name, hasSkin).toString());
+        Path cape = capeLookup == null ? null : capeLookup.apply(uuidNoDash);
+        boolean hasCape = cape != null && Files.isRegularFile(cape);
+        respond(ex, 200, "application/json; charset=utf-8", profileJson(uuidNoDash, name, hasSkin, hasCape).toString());
     }
 
-    private JSONObject profileJson(String uuidNoDash, String name, boolean hasSkin) {
+    private JSONObject profileJson(String uuidNoDash, String name, boolean hasSkin, boolean hasCape) {
         JSONObject payload = new JSONObject();
         payload.put("timestamp", System.currentTimeMillis());
         payload.put("profileId", uuidNoDash);
         payload.put("profileName", name);
+        JSONObject textures = new JSONObject();
         if (hasSkin) {
             JSONObject skin = new JSONObject();
             skin.put("url", "http://127.0.0.1:" + port + "/skins/" + uuidNoDash + ".png");
-            JSONObject textures = new JSONObject();
             textures.put("SKIN", skin);
+        }
+        if (hasCape) {
+            JSONObject cape = new JSONObject();
+            cape.put("url", "http://127.0.0.1:" + port + "/capes/" + uuidNoDash + ".png");
+            textures.put("CAPE", cape);
+        }
+        if (!textures.isEmpty()) {
             payload.put("textures", textures);
         }
         String value = Base64.getEncoder().encodeToString(payload.toString().getBytes(StandardCharsets.UTF_8));
@@ -158,6 +173,27 @@ public class SkinServer {
         Path f = skinsDir.resolve(seg);
         if (!Files.isRegularFile(f)) {
             respond(ex, 404, "text/plain", "no skin");
+            return;
+        }
+        byte[] data = Files.readAllBytes(f);
+        ex.getResponseHeaders().set("Content-Type", "image/png");
+        ex.sendResponseHeaders(200, data.length);
+        try (OutputStream os = ex.getResponseBody()) {
+            os.write(data);
+        }
+    }
+
+    /** 披风纹理：按 uuid 经 capeLookup 取文件，不按 URL 文件名拼路径，杜绝目录穿越。 */
+    private void serveCape(HttpExchange ex, String path) throws IOException {
+        String seg = lastSegment(path);
+        if (seg.contains("..") || seg.contains("/") || seg.contains("\\")) {
+            respond(ex, 404, "text/plain", "no cape");
+            return;
+        }
+        String uuid = seg.replaceFirst("(?i)\\.png$", "");
+        Path f = capeLookup == null ? null : capeLookup.apply(uuid);
+        if (f == null || !Files.isRegularFile(f)) {
+            respond(ex, 404, "text/plain", "no cape");
             return;
         }
         byte[] data = Files.readAllBytes(f);

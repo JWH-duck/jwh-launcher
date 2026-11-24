@@ -2189,14 +2189,33 @@ public class HomeView {
         if (acc.type == LauncherConfig.Account.Type.OFFLINE) {
             try {
                 Path skinsDir = java.nio.file.Path.of(app.config.minecraftDir).resolve("skins");
-                skinServer = new SkinServer(skinsDir, uuidNoDash -> {
-                    for (LauncherConfig.Account a : app.config.accounts) {
-                        if (a.uuid != null && a.uuid.replace("-", "").equals(uuidNoDash)) {
-                            return a.userName;
-                        }
-                    }
-                    return null;
-                });
+                Path libDir = skinsDir.resolve("library");
+                skinServer = new SkinServer(skinsDir,
+                        uuidNoDash -> {
+                            for (LauncherConfig.Account a : app.config.accounts) {
+                                if (a.uuid != null && a.uuid.replace("-", "").equals(uuidNoDash)) {
+                                    return a.userName;
+                                }
+                            }
+                            return null;
+                        },
+                        uuidNoDash -> {
+                            for (LauncherConfig.Account a : app.config.accounts) {
+                                if (a.uuid == null || !a.uuid.replace("-", "").equals(uuidNoDash)) {
+                                    continue;
+                                }
+                                if (a.capeFile == null || a.capeFile.isBlank()) {
+                                    return null;
+                                }
+                                Path p = skinsDir.resolve(a.capeFile);
+                                if (Files.isRegularFile(p)) {
+                                    return p;
+                                }
+                                Path p2 = libDir.resolve(a.capeFile);
+                                return Files.isRegularFile(p2) ? p2 : null;
+                            }
+                            return null;
+                        });
             } catch (Exception e) {
                 Ui.error("本地认证服务启动失败（离线模式可能无法进入完整版）", e);
                 launchBtn.setDisable(false);

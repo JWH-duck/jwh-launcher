@@ -110,13 +110,15 @@ public class SkinCanvas extends Canvas {
     /** 点击能量 0..1，随时间衰减，驱动下蹲 + 抖动。 */
     private double energy;
 
-    /** 点击互动动作：0=无，1=打招呼（挥手），2=欢呼（双臂高举张开）。 */
+    /** 点击互动动作：0=无，1=打招呼（挥手），2=欢呼（双臂高举张开），3=庆祝（双臂交替上举挥手，经平展过渡）。 */
     private int action;
     /** 当前动作已播放的秒数。 */
     private double actionTime;
     private static final double ACTION_WAVE_DUR = 1.5;
     /** 欢呼动作时长：连续两次起跳落地，手臂全程高举，整体紧凑干脆。 */
     private static final double ACTION_CHEER_DUR = 1.8;
+    /** 庆祝动作时长：右臂举挥 → 双臂平展 → 左臂举挥 → 收回，节奏比欢呼舒缓。 */
+    private static final double ACTION_CELEBRATE_DUR = 2.0;
     private final Random random = new Random();
     /** 待机随机动作触发周期（秒）：每隔 5 分钟未操作，随机播一个动作。 */
     private static final double IDLE_ACTION_PERIOD = 300.0;
@@ -185,7 +187,9 @@ public class SkinCanvas extends Canvas {
 
     /** 当前动作时长（秒），按动作编号取各自时长。 */
     private double actionDur() {
-        return action == 2 ? ACTION_CHEER_DUR : ACTION_WAVE_DUR;
+        if (action == 2) return ACTION_CHEER_DUR;
+        if (action == 3) return ACTION_CELEBRATE_DUR;
+        return ACTION_WAVE_DUR;
     }
 
     private void beginAction(int a) {
@@ -204,9 +208,9 @@ public class SkinCanvas extends Canvas {
         beginAction(1);
     }
 
-    /** 从动作池里随机挑一个播放：点击小人、待机较久都走这里。 */
+    /** 从动作池里随机挑一个播放：点击小人、待机较久都走这里。池内 1=挥手 2=欢呼 3=庆祝。 */
     public void triggerRandomAction() {
-        beginAction(1 + random.nextInt(2));
+        beginAction(1 + random.nextInt(3));
     }
 
     /** 强制播放欢呼：游戏进程真正启动后触发，不走随机池。 */
@@ -731,6 +735,58 @@ public class SkinCanvas extends Canvas {
                 double q = (p - 0.37) / 0.23;
                 actJump = 1.4 * Math.sin(q * Math.PI);
             }
+        } else if (action == 3) {
+            // 庆祝：双臂交替上举挥手，中间经双臂水平平展过渡（参考 celebrate 交替举手 GIF）。
+            double p = Math.min(1.0, actionTime / ACTION_CELEBRATE_DUR);
+            double wave = Math.sin(actionTime * 11.0) * 12.0;
+            double rRoll, lRoll, rFwd, lFwd, hRoll, hYaw;
+            if (p < 0.34) {                                   // 右臂举挥
+                double q = p / 0.34;
+                double up = Math.sin(Math.min(1.0, q / 0.16) * Math.PI / 2);
+                rRoll = (-116.0 + wave) * up;
+                lRoll = 0.0;
+                rFwd = -10.0 * up;
+                lFwd = 0.0;
+                hRoll = 6.0 * up;
+                hYaw = -4.0 * up;
+            } else if (p < 0.44) {                            // 过渡：双臂分到水平两侧平展
+                double q = (p - 0.34) / 0.10;
+                rRoll = -116.0 + 26.0 * q;                     // 右臂 116° -> 水平 90°
+                lRoll = 90.0 * q;                              // 左臂 0 -> 水平 90°
+                rFwd = -10.0 + 4.0 * q;
+                lFwd = -6.0 * q;
+                hRoll = 0.0;
+                hYaw = 0.0;
+            } else if (p < 0.80) {                            // 左臂举挥
+                double q = (p - 0.44) / 0.36;
+                double up = Math.sin(Math.min(1.0, q / 0.16) * Math.PI / 2);
+                // 左臂从上一平展位(90°)连续抬到斜上举(116°)，不从下垂重新起
+                lRoll = 90.0 + (26.0 - wave) * up;
+                // 右臂从上一平展位快速收回身侧，避免由水平直接跳下垂
+                double rSettle = Math.max(0.0, 1.0 - q / 0.15);
+                rRoll = -90.0 * rSettle;
+                rFwd = -6.0 * rSettle;
+                lFwd = -6.0 - 4.0 * up;
+                hRoll = -6.0 * up;
+                hYaw = 4.0 * up;
+            } else {                                          // 平展后收回站立
+                double q = (p - 0.80) / 0.20;
+                double down = Math.pow(Math.max(0.0, 1.0 - q), 1.5);
+                rRoll = -90.0 * down;
+                lRoll = 90.0 * down;
+                rFwd = -6.0 * down;
+                lFwd = -6.0 * down;
+                hRoll = 0.0;
+                hYaw = 0.0;
+            }
+            actArmRight = rFwd;
+            actArmLeft = lFwd;
+            actArmRoll = rRoll;
+            actArmRollL = lRoll;
+            actHeadRoll = hRoll;
+            actHeadYaw = hYaw;
+            // 腰以上轻微跟随扭转，幅度比挥手小，腿脚保持垂直
+            actWaistTwist = Math.sin(actionTime * 6.0) * 2.2;
         }
 
         double legSwing = walking ? Math.sin(walkPhase) * 24.0 : 0.0;
