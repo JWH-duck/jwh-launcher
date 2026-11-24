@@ -9,9 +9,9 @@ import javafx.application.Application;
 public class Main {
 
     public static void main(String[] args) {
-        // 实测（2026-11-03）：api.modrinth.com 仅 IPv4 可达（IPv6 连接超时），
-        // cdn.modrinth.com IPv4/IPv6 均可达（IPv4 更快）。全局开 IPv6 优先会弄坏搜索/API，
-        // 故保持 JVM 默认（IPv4 优先）；下载提速由 Http 层 HTTP/1.1 + 分段实现。
+        // Modrinth api/cdn 域名的 IPv4/IPv6 可达性会随网络时段反转，JDK HttpClient 又不做
+        // 多地址回退；可达性择优由 ModrinthReachableResolver（SPI）按 TCP 探测自动排序处理，
+        // 这里不设全局 preferIPv6Addresses，避免在纯 IPv4 网络上押错族。
         Application.launch(LauncherApp.class, args);
     }
 }

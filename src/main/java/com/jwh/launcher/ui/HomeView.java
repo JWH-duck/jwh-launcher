@@ -380,7 +380,7 @@ public class HomeView {
         this.homeSkin.setPitch(3.0);
         this.homeSkin.setCursor(Cursor.HAND);
         this.homeSkin.setOnMouseClicked(e -> {
-            this.homeSkin.clickPulse();
+            this.homeSkin.triggerRandomAction();
             e.consume();
         });
         // 顶部弹性占位把小人压到底部，脚正好踩在「启动游戏」上方
@@ -2253,6 +2253,8 @@ public class HomeView {
             launchBtn.setDisable(false);
             app.setStatus("游戏进程已启动");
             app.gameLog.appendText("===== 游戏已启动（关闭启动器不影响游戏运行）=====\n");
+            // 游戏进程真正跑起来后，小人自动欢呼一次（不是点启动按钮那一下）
+            if (this.homeSkin != null && this.homeSkin.hasSkin()) this.homeSkin.playCheer();
         }, err -> {
             List<ModCheck.Issue> issues = ModCheck.check(modsDir, v.mcBase(), v.loaderVer(),
                     Runtime.version().feature());

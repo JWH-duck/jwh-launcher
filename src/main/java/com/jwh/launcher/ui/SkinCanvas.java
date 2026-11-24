@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 
 /**
  * 皮肤预览渲染器（2D 画布 + 正交投影）。
@@ -109,11 +110,18 @@ public class SkinCanvas extends Canvas {
     /** 点击能量 0..1，随时间衰减，驱动下蹲 + 抖动。 */
     private double energy;
 
-    /** 点击互动动作：0=无，1=打招呼（挥手）。 */
+    /** 点击互动动作：0=无，1=打招呼（挥手），2=欢呼（双臂高举张开）。 */
     private int action;
     /** 当前动作已播放的秒数。 */
     private double actionTime;
     private static final double ACTION_WAVE_DUR = 1.5;
+    /** 欢呼动作时长：连续两次起跳落地，手臂全程高举，整体紧凑干脆。 */
+    private static final double ACTION_CHEER_DUR = 1.8;
+    private final Random random = new Random();
+    /** 待机随机动作触发周期（秒）：每隔 5 分钟未操作，随机播一个动作。 */
+    private static final double IDLE_ACTION_PERIOD = 300.0;
+    /** 距上一次动作的空闲秒数。 */
+    private double idleTimer;
 
     private AnimationTimer anim;
 
@@ -134,9 +142,27 @@ public class SkinCanvas extends Canvas {
                     if (el < 12000000L && !NOLIMIT) return;
                     energy = Math.max(0, energy - el / 1e9 * 4.0);
                     animTime += el / 1e9;
+                    double elSec = el / 1e9;
                     if (action != 0) {
-                        actionTime += el / 1e9;
-                        if (actionTime >= ACTION_WAVE_DUR) { action = 0; actionTime = 0; headFollowLocked = false; }
+                        actionTime += elSec;
+                        idleTimer = 0;
+                        if (actionTime >= actionDur()) {
+                            action = 0; actionTime = 0; headFollowLocked = false;
+                            idleTimer = 0;
+                        }
+                    } else if (!walking) {
+                        // 待机空闲计时：走路期间不计，避免走动停顿后立刻蹦动作；
+                        // 皮肤未就绪时不累计，避免一换肤就立刻蹦动作。
+                        if (hasSkin()) {
+                            idleTimer += elSec;
+                            if (idleTimer >= IDLE_ACTION_PERIOD) {
+                                triggerRandomAction();
+                            }
+                        } else {
+                            idleTimer = 0;
+                        }
+                    } else {
+                        idleTimer = 0;
                     }
                 }
                 started = true;
@@ -157,15 +183,35 @@ public class SkinCanvas extends Canvas {
         animTime = 0;
     }
 
+    /** 当前动作时长（秒），按动作编号取各自时长。 */
+    private double actionDur() {
+        return action == 2 ? ACTION_CHEER_DUR : ACTION_WAVE_DUR;
+    }
+
+    private void beginAction(int a) {
+        this.action = a;
+        this.actionTime = 0.0;
+        this.energy = 0.0;
+        this.idleTimer = 0.0;
+        render();
+    }
+
     /**
-     * 点击互动：打招呼（挥手）。跳跃动作已按反馈去掉，只保留这一个。
+     * 强制打招呼（挥手）：进场自动问候用，不走随机池。
      * 原来那套下蹲 + 抖动改由挥手承担，所以不再叠加 energy。
      */
     public void clickPulse() {
-        this.action = 1;
-        this.actionTime = 0.0;
-        this.energy = 0.0;
-        render();
+        beginAction(1);
+    }
+
+    /** 从动作池里随机挑一个播放：点击小人、待机较久都走这里。 */
+    public void triggerRandomAction() {
+        beginAction(1 + random.nextInt(2));
+    }
+
+    /** 强制播放欢呼：游戏进程真正启动后触发，不走随机池。 */
+    public void playCheer() {
+        beginAction(2);
     }
 
     public SkinCanvas(double w, double h) {
@@ -625,11 +671,13 @@ public class SkinCanvas extends Canvas {
         double actArmRight = 0.0;   // 右臂额外举起的角度（叠加在前后摆上）
         double actArmRoll = 0.0;    // 右臂左右扫的角度：挥手时靠它甩起来，否则正面看只是抬着不动
         double actArmLeft = 0.0;    // 左臂配合微张，避免"一条胳膊动另一条钉住"的僵感
+        double actArmRollL = 0.0;   // 左臂绕 Z 外展角度：欢呼时双臂对称侧举张开
         double actHeadRoll = 0.0;   // 挥手时头部朝举手方向微微歪（绕 Z）
         double actHeadYaw = 0.0;    // 动作期间头部的固定朝向（此期间不吃鼠标）
         double actHeadPitch = 0.0;
         double actWaistTwist = 0.0; // 腰部带动的左右扭转（绕 Y）：脚和腿不动，腰以上跟着扭
         double actWaistBend = 0.0;  // 腰部带动的极小侧弯（绕 Z）：只作用于腰以上，绝非"整个身体倾斜"
+        double actJump = 0.0;       // 欢呼跳跃：身体整体上下位移（正=腾空上升，负=下蹲蓄力）
         if (action == 1) {
             double p = Math.min(1.0, actionTime / ACTION_WAVE_DUR);
             // 抬臂 → 挥手 → 放下：0.22 处抬满，0.80 之后开始收
@@ -655,6 +703,34 @@ public class SkinCanvas extends Canvas {
             // 弯只发生在腰以上，和已被否决的"整躯干 4.2° roll"不是一回事。
             actWaistTwist = (1.2 + Math.sin(actionTime * 12.0 - 0.55) * 4.4) * up;
             actWaistBend = (0.6 + Math.sin(actionTime * 12.0 - 1.15) * 1.3) * up;
+        } else if (action == 2) {
+            // 欢呼：双臂从身侧同时上举过头，向两侧斜上方张开（参考 Steve cheer 动作）。
+            double p = Math.min(1.0, actionTime / ACTION_CHEER_DUR);
+            // 手臂：两跳期间全程高举，0.10 内举满，0.70 后收回。
+            double up = Math.sin(Math.min(1.0, p / 0.10) * Math.PI / 2);
+            if (p > 0.70) up *= Math.max(0.0, (1.0 - p) / 0.30);
+            // 双臂对称侧举：绕 X 略向前抬，绕 Z 向两侧斜上方举过头顶；
+            // 左右加一点错相的轻微起伏，对应参考 GIF 里举手后的小幅晃动。
+            double sway = Math.sin(actionTime * 7.0) * 4.0;
+            actArmRight = -8.0 * up;
+            actArmLeft = -8.0 * up;
+            actArmRoll = (-140.0 + sway) * up;
+            actArmRollL = (140.0 - sway) * up;
+            // 对称欢呼：头不歪不转，只轻轻抬一点下巴
+            actHeadPitch = -2.0 * up;
+            // 连续两跳：第 1 跳蓄力 0~0.07、腾空 0.07~0.30；落地衔接后
+            // 第 2 跳蓄力 0.30~0.37、腾空 0.37~0.60；起跳斜率最大、落地快速归零。
+            if (p < 0.07) {
+                actJump = -0.45 * Math.sin(p / 0.07 * Math.PI / 2);
+            } else if (p < 0.30) {
+                double q = (p - 0.07) / 0.23;
+                actJump = 1.4 * Math.sin(q * Math.PI);
+            } else if (p < 0.37) {
+                actJump = -0.45 * Math.sin((p - 0.30) / 0.07 * Math.PI / 2);
+            } else if (p < 0.60) {
+                double q = (p - 0.37) / 0.23;
+                actJump = 1.4 * Math.sin(q * Math.PI);
+            }
         }
 
         double legSwing = walking ? Math.sin(walkPhase) * 24.0 : 0.0;
@@ -665,9 +741,10 @@ public class SkinCanvas extends Canvas {
             // 走动时身体随步点起伏（双脚并拢相位最低、迈开时最高）
             dy += Math.abs(Math.sin(walkPhase)) * 0.55 - 0.30;
         }
+        dy += actJump;
         double headTurn;
         double headDip = 0.0;
-        if (action == 1) {
+        if (action != 0) {
             // 动作期间头部锁定固定姿态，鼠标移动不再牵动它。
             // 同时把平滑值同步成这个姿态，动作结束后回到跟随模式时不会突然甩头。
             headTurn = actHeadYaw;
@@ -715,6 +792,10 @@ public class SkinCanvas extends Canvas {
         double armRollR = Math.toRadians(actArmRoll);
         double armRollCa = Math.cos(armRollR), armRollSa = Math.sin(armRollR);
         boolean armRollOn = Math.abs(actArmRoll) > 0.001;
+        // 左臂绕 Z 外展（欢呼时与右臂对称侧举），三角值与右臂同一套旋转公式
+        double armRollL = Math.toRadians(actArmRollL);
+        double armRollLCa = Math.cos(armRollL), armRollLSa = Math.sin(armRollL);
+        boolean armRollLOn = Math.abs(actArmRollL) > 0.001;
         // 头部歪斜（绕 Z）：挥手时才有值，正角度让头往画面左（举手那侧）倒
         double headRollR = Math.toRadians(actHeadRoll);
         double headRollCa = Math.cos(headRollR), headRollSa = Math.sin(headRollR);
@@ -763,6 +844,11 @@ public class SkinCanvas extends Canvas {
                     double ty = ly0 * armLCa - lz0 * armLSa;
                     double tz = ly0 * armLSa + lz0 * armLCa;
                     ly0 = ty; lz0 = tz;
+                    if (armRollLOn) {                    // 欢呼：再绕 Z 向对侧斜上方张开
+                        double tx2 = lx0 * armRollLCa - ly0 * armRollLSa;
+                        double ty2 = lx0 * armRollLSa + ly0 * armRollLCa;
+                        lx0 = tx2; ly0 = ty2;
+                    }
                 } else if (f.part == 4) {                 // 右腿：绕腰部枢轴前后迈步
                     double ty = ly0 * legRCa - lz0 * legRSa;
                     double tz = ly0 * legRSa + lz0 * legRCa;
