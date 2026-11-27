@@ -1625,6 +1625,7 @@ public class HomeView {
                 + " -fx-text-fill:#ffffff; -fx-font-size:16px; -fx-font-weight:bold; -fx-cursor:hand;");
         this.launchBtn.setPrefHeight(56);
         HBox.setHgrow(this.launchBtn, Priority.ALWAYS);
+        this.launchBtn.setOnAction(e -> launch());
 
         HBox btnRow = new HBox(10, this.launchBtn, this.launchArrow);
         btnRow.setAlignment(Pos.CENTER);

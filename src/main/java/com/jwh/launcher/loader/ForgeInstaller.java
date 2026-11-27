@@ -227,9 +227,11 @@ public class ForgeInstaller {
                     {"https://bmclapi2.bangbang93.com/maven/net/minecraftforge/forge/maven-metadata.xml", "loader-meta-forge-" + mc},
                     {"https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml", "loader-meta-forge-official-" + mc}};
         } else {
+            // 现代 NeoForge（1.20.2 起，含 20.2/20.3/20.4/21.1）构件都在 net/neoforged/neoforge；
+            // net/neoforged/forge 是 1.20.1 及更早的 Forge 过渡仓库，不含任何 NeoForge 版本。
             candidates = new String[][]{
-                    {"https://bmclapi2.bangbang93.com/maven/net/neoforged/forge/maven-metadata.xml", "loader-meta-neoforge-" + mc},
-                    {"https://maven.neoforged.net/releases/net/neoforged/forge/maven-metadata.xml", "loader-meta-neoforge-official-" + mc}};
+                    {"https://bmclapi2.bangbang93.com/maven/net/neoforged/neoforge/maven-metadata.xml", "loader-meta-neoforge-" + mc},
+                    {"https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml", "loader-meta-neoforge-official-" + mc}};
         }
         java.util.regex.Pattern pat = java.util.regex.Pattern.compile("<version>(.*?)</version>");
         String prefix = mc + "-";
@@ -249,35 +251,69 @@ public class ForgeInstaller {
             } catch (Exception ignored) {
             }
         }
-        // 2) 镜像与官方 maven-metadata 双路并发抢答（谁快用谁，慢源不阻塞）
+        // 2) 镜像与官方并发拉取全部 metadata；逐路解析，非空结果合并去重。
+        //    空 / 残缺 body（镜像偶发 200 空响应）解析为空即跳过，不会被当成胜出结果。
+        java.util.Map<String, String> bodies = fetchMetaBodies(candidates);
+        java.util.LinkedHashSet<String> merged = new java.util.LinkedHashSet<>();
         Exception last = null;
         try {
-            String body = Http.getTextRace(candidates[0][0], candidates[1][0]);
             for (String[] c : candidates) {
+                String body = bodies.get(c[0]);
+                if (body == null) continue;
                 try {
                     Files.createDirectories(dir);
                     Files.writeString(dir.resolve(c[1] + ".txt"), body);
                 } catch (Exception ignored) {
                 }
+                List<String> out = parseMetadata(pat, prefix, neoPrefix, body);
+                if (!out.isEmpty()) merged.addAll(out);
             }
-            List<String> out = parseMetadata(pat, prefix, neoPrefix, body);
-            if (!out.isEmpty()) return out;
-            last = new Exception("maven-metadata 无 " + mc + " 条目");
         } catch (Exception e) {
             last = e;
-            // 3) 双路均失败：回退任意缓存（force 刷新失败也不丢旧数据）
-            for (String[] c : candidates) {
-                try {
-                    Path f = dir.resolve(c[1] + ".txt");
-                    if (Files.exists(f)) {
-                        List<String> out = parseMetadata(pat, prefix, neoPrefix, Files.readString(f));
-                        if (!out.isEmpty()) return out;
-                    }
-                } catch (Exception ignored) {
+        }
+        if (!merged.isEmpty()) {
+            List<String> res = new ArrayList<>(merged);
+            res.sort(ForgeInstaller::compareLoader);
+            return res;
+        }
+        // 3) 双路均失败/解析为空：回退任意旧缓存（force 刷新失败也不丢旧数据）
+        for (String[] c : candidates) {
+            try {
+                Path f = dir.resolve(c[1] + ".txt");
+                if (Files.exists(f)) {
+                    List<String> out = parseMetadata(pat, prefix, neoPrefix, Files.readString(f));
+                    if (!out.isEmpty()) return out;
                 }
+            } catch (Exception ignored) {
             }
         }
-        throw last;
+        throw last != null ? last : new Exception("maven-metadata 无 " + mc + " 条目");
+    }
+
+    /** 并发拉取多路小文本 metadata，返回 url->body；失败/超时的 url 不入表。 */
+    private static java.util.Map<String, String> fetchMetaBodies(String[][] candidates) {
+        java.util.Map<String, String> res = new java.util.concurrent.ConcurrentHashMap<>();
+        int n = Math.max(candidates.length, 1);
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(n);
+        java.util.concurrent.ExecutorService ex = java.util.concurrent.Executors.newFixedThreadPool(n);
+        try {
+            for (String[] c : candidates) {
+                ex.execute(() -> {
+                    try {
+                        res.put(c[0], Http.getText(c[0]));
+                    } catch (Exception ignored) {
+                    } finally {
+                        done.countDown();
+                    }
+                });
+            }
+            done.await(75, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            ex.shutdownNow();
+        }
+        return res;
     }
 
     private static List<String> parseMetadata(java.util.regex.Pattern pat, String prefix,
