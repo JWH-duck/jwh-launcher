@@ -77,6 +77,7 @@ public class SkinsView {
 
     /** 账号卡：头像 + 昵称 + 副行。 */
     private ImageView avatarView;
+    private Image accountDefaultImage;
     private Label accountName;
     private Label accountSub;
     /** 左栏模型 / 披风按钮。 */
@@ -162,6 +163,7 @@ public class SkinsView {
         } catch (Exception ignored) {
         }
         if (av == null) av = Ui.GRASS_BLOCK;
+        this.accountDefaultImage = av;
         this.avatarView = new ImageView(av);
         this.avatarView.setFitWidth(48.0);
         this.avatarView.setFitHeight(48.0);
@@ -623,9 +625,11 @@ public class SkinsView {
             if (acc == null) {
                 this.accountName.setText("未登录");
                 this.accountSub.setText("点击登录账户");
+                if (this.accountDefaultImage != null) this.avatarView.setImage(this.accountDefaultImage);
             } else {
                 this.accountName.setText(acc.displayName == null || acc.displayName.isBlank() ? "未命名" : acc.displayName);
                 this.accountSub.setText(this.typeLabel(acc));
+                this.app.renderAvatar(acc, this.avatarView, 48, this.accountDefaultImage);
             }
         }
         // 标签胶囊样式

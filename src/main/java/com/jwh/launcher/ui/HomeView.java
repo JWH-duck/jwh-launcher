@@ -86,6 +86,12 @@ public class HomeView {
 
     private final LauncherApp app;
     private final ListView<LocalVersions.LocalVersion> versionList = new ListView<>();
+    /** 主页左上账号卡：昵称 / 登录类型 / 头像，随当前选中账号刷新。 */
+    private Label cardName;
+    private Label cardType;
+    private ImageView cardAvatar;
+    /** 账号卡默认头像（Steve 像素头），本地无皮肤时回填。 */
+    private Image cardDefaultImage;
     private final Button launchBtn = new Button("启动游戏");
     private final Label verTitle = new Label();
     private final Label verMeta = new Label();
@@ -207,18 +213,21 @@ public class HomeView {
         card.setCursor(Cursor.HAND);
         card.setOnMouseClicked(e -> app.showLogin());
 
-        ImageView cardAvatar = new ImageView();
+        cardAvatar = new ImageView();
         cardAvatar.setFitWidth(60);
         cardAvatar.setFitHeight(60);
         cardAvatar.setPreserveRatio(true);
         cardAvatar.setSmooth(false);
         try (java.io.InputStream in = getClass().getResourceAsStream("/avatar_steve.png")) {
-            if (in != null) cardAvatar.setImage(new Image(in));
+            if (in != null) {
+                cardDefaultImage = new Image(in);
+                cardAvatar.setImage(cardDefaultImage);
+            }
         } catch (Exception ignored) {
         }
-        Label cardName = new Label("未登录");
+        cardName = new Label("未登录");
         cardName.setStyle("-fx-text-fill:#ffffff; -fx-font-size:20px; -fx-font-weight:bold;");
-        Label cardType = new Label("点击登录账户");
+        cardType = new Label("点击登录账户");
         cardType.setStyle("-fx-text-fill:rgba(255,255,255,0.75); -fx-font-size:14px;");
         VBox idBox = new VBox(1);
         idBox.setAlignment(Pos.CENTER_LEFT);
@@ -1936,6 +1945,42 @@ public class HomeView {
         this.homeSkin.setHeadAim(yawDeg, pitchDeg);
     }
 
+    /** 刷新左上账号卡：昵称 / 登录类型 / 头像随当前选中账号回写；无账号则复位默认未登录态。 */
+    private void refreshAccountCard() {
+        LauncherConfig.Account acc = null;
+        try {
+            acc = app.auth.currentAccount(false);
+        } catch (Exception ignored) {
+        }
+        if (acc == null) {
+            cardName.setText("未登录");
+            cardType.setText("点击登录账户");
+            setCardDefaultAvatar();
+            return;
+        }
+        String name = acc.displayName == null || acc.displayName.isBlank()
+                ? (acc.userName == null ? "" : acc.userName) : acc.displayName;
+        cardName.setText(name);
+        cardType.setText(switch (acc.type) {
+            case MICROSOFT -> "正版登录";
+            case LITTLESKIN -> "LittleSkin 登录";
+            default -> "离线登录";
+        });
+        app.renderAvatar(acc, cardAvatar, 60, cardDefaultImage);
+    }
+
+    /** 账号卡默认头像（Steve 像素头，与初始素材一致）。 */
+    private void setCardDefaultAvatar() {
+        if (cardDefaultImage != null && !cardDefaultImage.isError()) {
+            cardAvatar.setImage(cardDefaultImage);
+        }
+        cardAvatar.setViewport(null);
+        cardAvatar.setFitWidth(60);
+        cardAvatar.setFitHeight(60);
+        cardAvatar.setPreserveRatio(true);
+        cardAvatar.setSmooth(false);
+    }
+
     /**
      * 主页小人的皮肤来源 = 皮肤库「正在使用」的那张。
      *
@@ -1995,6 +2040,8 @@ public class HomeView {
         // 皮肤库里「使用这个皮肤」就是把 <minecraftDir>/skins/<uuid>.png 覆盖写入，
         // 所以主页小人只要读这一个文件，就自动跟皮肤库保持同步。
         this.loadHomeSkin();
+        // 账号卡昵称 / 类型 / 头像随当前选中账号刷新（此前卡片构造后从不回写，登录后仍显示未登录）。
+        this.refreshAccountCard();
         // 先记住当前选中项：下面 setAll 会清空 selection，旧逻辑随后直接 selectFirst，
         // 于是"换了版本、切一下页面回来又跳回第一项"。选中项持久化在 config，重启也能记住。
         LocalVersions.LocalVersion keep = versionList.getSelectionModel().getSelectedItem();

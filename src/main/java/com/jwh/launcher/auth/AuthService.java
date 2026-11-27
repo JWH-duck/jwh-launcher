@@ -19,14 +19,23 @@ public class AuthService {
         this.config = config;
     }
 
-    /** 添加离线账号并选中。 */
+    /** 添加离线账号并选中；同名（同离线 UUID）已有账号则复用并选中，避免重复堆积。 */
     public LauncherConfig.Account addOfflineAccount(String username) {
         String name = username == null || username.isBlank() ? "Steve" : username.trim();
-        LauncherConfig.Account a = LauncherConfig.Account.offline(name);
-        config.accounts.add(a);
+        LauncherConfig.Account proto = LauncherConfig.Account.offline(name);
+        for (LauncherConfig.Account existing : config.accounts) {
+            if (existing.type == LauncherConfig.Account.Type.OFFLINE && proto.uuid.equals(existing.uuid)) {
+                existing.displayName = name;
+                existing.userName = name;
+                config.selectedAccount = config.accounts.indexOf(existing);
+                save();
+                return existing;
+            }
+        }
+        config.accounts.add(proto);
         config.selectedAccount = config.accounts.size() - 1;
         save();
-        return a;
+        return proto;
     }
 
     /** 微软 Device Code 登录：用轮询拿到的 (access_token, refresh_token) 完成登录并保存账号。 */

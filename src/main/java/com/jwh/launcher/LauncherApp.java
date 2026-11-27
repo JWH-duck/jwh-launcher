@@ -1606,18 +1606,34 @@ public class LauncherApp extends Application {
         loadAvatar(acc);
     }
 
-    /** 左上角默认头像（直接用 48×48 图标，1:1 不缩放，避免重采样变糊）。 */
-    private void setDefaultAvatar() {
-        try {
-            avatarView.setImage(new javafx.scene.image.Image(
-                    getClass().getResourceAsStream("/icon_48.png")));
-            avatarView.setViewport(null);
-            avatarView.setFitWidth(48);
-            avatarView.setFitHeight(48);
-            avatarView.setPreserveRatio(true);
-            avatarView.setSmooth(false);
-        } catch (Exception ignored) {
+    /** 顶栏品牌默认头像（icon_48 龙首），懒加载缓存。 */
+    private Image brandAvatar;
+
+    private Image brandAvatar() {
+        if (brandAvatar == null) {
+            try {
+                brandAvatar = new Image(getClass().getResourceAsStream("/icon_48.png"));
+            } catch (Exception ignored) {
+                brandAvatar = null;
+            }
         }
+        return brandAvatar;
+    }
+
+    /** 顶栏默认头像（直接用 48×48 品牌图标，1:1 不缩放，避免重采样变糊）。 */
+    private void setDefaultAvatar() {
+        applyDefaultImage(avatarView, brandAvatar(), 48);
+    }
+
+    /** 把指定默认头像图写入目标 ImageView（顶栏品牌龙首 / 主页 Steve 头各自传入）。 */
+    private void applyDefaultImage(ImageView target, javafx.scene.image.Image img, int size) {
+        if (img == null || img.isError()) return;
+        target.setImage(img);
+        target.setViewport(null);
+        target.setFitWidth(size);
+        target.setFitHeight(size);
+        target.setPreserveRatio(true);
+        target.setSmooth(false);
     }
 
     /**
@@ -1651,20 +1667,38 @@ public class LauncherApp extends Application {
 
     /** 把整张皮肤（64×64 / 32×64）的脸部铺到顶栏：像素级放大成 48×48 图，1:1 显示。 */
     private void applyHead(javafx.scene.image.Image skin) {
-        javafx.scene.image.Image head = pixelHead(skin, 8, 8, 1, 48);
-        if (head == null) throw new IllegalStateException("skin too small");
-        avatarView.setImage(head);
-        avatarView.setViewport(null);
-        avatarView.setFitWidth(48);
-        avatarView.setFitHeight(48);
-        avatarView.setPreserveRatio(true);
-        avatarView.setSmooth(false);
+        applyHead(skin, avatarView, 48);
     }
 
-    /** 加载玩家头像：离线优先本地皮肤头部；正版走官方 sessionserver 拿当前皮肤裁剪脸部（实时反映已换皮肤）。 */
+    /** 把整张皮肤的脸部铺到指定 ImageView，按 size 边长像素级放大，1:1 显示。 */
+    private void applyHead(javafx.scene.image.Image skin, ImageView target, int size) {
+        javafx.scene.image.Image head = pixelHead(skin, 8, 8, 1, size);
+        if (head == null) throw new IllegalStateException("skin too small");
+        target.setImage(head);
+        target.setViewport(null);
+        target.setFitWidth(size);
+        target.setFitHeight(size);
+        target.setPreserveRatio(true);
+        target.setSmooth(false);
+    }
+
+    /** 加载顶栏玩家头像：离线优先本地皮肤头部；正版走官方 sessionserver 拿当前皮肤裁剪脸部。 */
     private void loadAvatar(LauncherConfig.Account acc) {
+        renderAvatar(acc, avatarView, 48, brandAvatar());
+    }
+
+    /**
+     * 把账号头像渲染到指定 ImageView（顶栏与主页账号卡共用同一套本地皮肤裁脸 / 正版联网链路）。
+     *
+     * @param target  头像控件
+     * @param size    裁脸后输出边长（正方形）
+     * @param fallback 本地无皮肤 / 无账号时回填的默认头像（顶栏品牌龙首、主页 Steve 头各自传入）
+     */
+    public void renderAvatar(LauncherConfig.Account acc, ImageView target, int size,
+                             javafx.scene.image.Image fallback) {
+        if (target == null) return;
         if (acc == null || acc.uuid == null || acc.uuid.isBlank()) {
-            setDefaultAvatar();
+            applyDefaultImage(target, fallback, size);
             return;
         }
         String uuidNoDash = acc.uuid.replace("-", "");
@@ -1679,18 +1713,18 @@ public class LauncherApp extends Application {
                     if (Files.isRegularFile(cand)) {
                         javafx.scene.image.Image img = new javafx.scene.image.Image(cand.toUri().toString(), false);
                         if (!img.isError()) {
-                            applyHead(img);
+                            applyHead(img, target, size);
                             return;
                         }
                     }
                 } catch (Exception ignored) {
                 }
             }
-            setDefaultAvatar();
+            applyDefaultImage(target, fallback, size);
             return;
         }
         // 皮肤库里点过「使用这个皮肤」→ skins/<uuid>.png 就是当前生效皮肤：
-        // 离线 / 正版都先按它裁脸，换完皮肤左上角头像立刻跟着变，
+        // 离线 / 正版都先按它裁脸，换完皮肤头像立刻跟着变，
         // 正版不能再死等 Mojang 线上那套旧皮肤（那是官方账号皮肤，换不了）。
         if (acc.type == LauncherConfig.Account.Type.OFFLINE
                 || acc.type == LauncherConfig.Account.Type.MICROSOFT) {
@@ -1699,7 +1733,7 @@ public class LauncherApp extends Application {
                 if (Files.isRegularFile(local)) {
                     javafx.scene.image.Image img = new javafx.scene.image.Image(local.toUri().toString(), false);
                     if (!img.isError()) {
-                        applyHead(img);
+                        applyHead(img, target, size);
                         return;
                     }
                 }
@@ -1707,29 +1741,29 @@ public class LauncherApp extends Application {
             }
         }
         if (acc.type == LauncherConfig.Account.Type.OFFLINE) {
-            try {
-                Path skin = Path.of(config.minecraftDir).resolve("skins").resolve(uuidNoDash + ".png");
-                if (Files.isRegularFile(skin)) {
-                    javafx.scene.image.Image img = new javafx.scene.image.Image(skin.toUri().toString(), false);
-                    if (!img.isError()) {
-                        applyHead(img);
-                        return;
-                    }
-                }
-            } catch (Exception ignored) {
-            }
-            fallbackAvatar(uuidNoDash, avatarGen);
+            // 离线 UUID 在 Mojang / Crafatar 线上不存在，联网只会超时或 500；本地无皮肤就用默认头，不发起联网回退。
+            applyDefaultImage(target, fallback, size);
             return;
         }
-        loadMicrosoftAvatar(uuidNoDash);
+        loadMicrosoftAvatar(uuidNoDash, target, size);
     }
 
-    /** 头像刷新代际：防止旧线程的慢请求覆盖新头像。 */
-    private volatile long avatarGen;
+    /** 头像刷新代际：按目标控件隔离，防止旧线程的慢请求覆盖新头像；顶栏与主页卡片互不顶掉。 */
+    private final java.util.Map<ImageView, Long> avatarGenByTarget = new java.util.HashMap<>();
+
+    private synchronized long bumpAvatarGen(ImageView target) {
+        long g = avatarGenByTarget.getOrDefault(target, 0L) + 1;
+        avatarGenByTarget.put(target, g);
+        return g;
+    }
+
+    private boolean avatarGenAlive(ImageView target, long gen) {
+        return avatarGenByTarget.getOrDefault(target, 0L) == gen;
+    }
 
     /** 正版头像：官方 sessionserver.mojang.com 实时拉取该账号当前皮肤并裁剪 8x8 脸部；失败回退 Crafatar 镜像。 */
-    private void loadMicrosoftAvatar(String uuidNoDash) {
-        final long gen = ++avatarGen;
+    private void loadMicrosoftAvatar(String uuidNoDash, ImageView target, int size) {
+        final long gen = bumpAvatarGen(target);
         new Thread(() -> {
             try {
                 String profile = com.jwh.launcher.util.Http.getText(
@@ -1760,22 +1794,22 @@ public class LauncherApp extends Application {
                 avatarLog("官方链路 OK，皮肤 " + skinBytes.length + "B，转 FX 线程解码");
                 final byte[] bytes = skinBytes;
                 javafx.application.Platform.runLater(() -> {
-                    if (gen != avatarGen) return; // 已被更新的刷新覆盖，丢弃旧结果
+                    if (!avatarGenAlive(target, gen)) return; // 已被更新的刷新覆盖，丢弃旧结果
                     try {
                         // 关键：JavaFX 的 Image(InputStream) 必须在 FX 线程构造，否则可能静默不显示
                         javafx.scene.image.Image skin = new javafx.scene.image.Image(
                                 new java.io.ByteArrayInputStream(bytes));
                         if (skin.isError()) throw new IllegalStateException("skin decode failed");
-                        applyHead(skin);
+                        applyHead(skin, target, size);
                         avatarLog("头像已显示 " + skin.getWidth() + "x" + skin.getHeight());
                     } catch (Exception ex) {
                         avatarLog("FX 解码失败: " + ex);
-                        fallbackAvatar(uuidNoDash, gen);
+                        fallbackAvatar(uuidNoDash, gen, target, size);
                     }
                 });
             } catch (Exception e) {
                 avatarLog("官方链路失败: " + e);
-                fallbackAvatar(uuidNoDash, gen);
+                fallbackAvatar(uuidNoDash, gen, target, size);
             }
         }, "JWH-Microsoft-Avatar").start();
     }
@@ -1783,27 +1817,27 @@ public class LauncherApp extends Application {
     /** 官方通道失败后的回退：Crafatar 镜像 → 全部失败保持当前头像。
      *  <p>注意：{@code new Image(httpsUrl)} 会同步发起 HTTP 请求，绝不能放在 FX 线程里，
      *  否则网络一慢整个界面就卡成「未响应」。这里改成后台线程取字节，再回 FX 解码。 */
-    private void fallbackAvatar(String uuidNoDash, long gen) {
+    private void fallbackAvatar(String uuidNoDash, long gen, ImageView target, int size) {
         new Thread(() -> {
             try {
                 byte[] bytes = com.jwh.launcher.util.Http.getBytes(
                         "https://crafatar.com/avatars/" + uuidNoDash + "?size=64&overlay=true");
                 if (bytes == null || bytes.length == 0) throw new IllegalStateException("crafatar empty");
                 javafx.application.Platform.runLater(() -> {
-                    if (gen != avatarGen) return;
+                    if (!avatarGenAlive(target, gen)) return;
                     try {
                         javafx.scene.image.Image img = new javafx.scene.image.Image(
                                 new java.io.ByteArrayInputStream(bytes));
                         if (img.isError()) throw new IllegalStateException("crafatar decode failed");
                         // crafatar 的 size=64 已经是「裁好的头」，整张就是脸：按 8×8 逻辑网格取样，不再偏移 (8,8)
-                        javafx.scene.image.Image head = pixelHead(img, 0, 0, 8, 48);
+                        javafx.scene.image.Image head = pixelHead(img, 0, 0, 8, size);
                         if (head == null) throw new IllegalStateException("crafatar size bad");
-                        avatarView.setImage(head);
-                        avatarView.setViewport(null);
-                        avatarView.setFitWidth(48);
-                        avatarView.setFitHeight(48);
-                        avatarView.setPreserveRatio(true);
-                        avatarView.setSmooth(false);
+                        target.setImage(head);
+                        target.setViewport(null);
+                        target.setFitWidth(size);
+                        target.setFitHeight(size);
+                        target.setPreserveRatio(true);
+                        target.setSmooth(false);
                     } catch (Exception ex) {
                         avatarLog("回退头像失败: " + ex);
                     }
