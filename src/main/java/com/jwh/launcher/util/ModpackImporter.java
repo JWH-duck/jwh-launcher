@@ -12,7 +12,7 @@ import java.util.zip.ZipInputStream;
 
 /**
  * 整合包导入工具：把拖入的整合包压缩包（.zip / .jar / .mrpack）解压、
- * 识别目录结构、合并复制到游戏目录。与 PCL 一致：压缩包拖到启动器即可导入。
+ * 识别目录结构、合并复制到游戏目录。压缩包拖到启动器即可导入。
  * 解压与合并都做了路径穿越防护（拒绝 ../ 与绝对路径条目）。
  */
 public final class ModpackImporter {

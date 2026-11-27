@@ -58,8 +58,11 @@ public final class RoomCodeService {
 
     private static final Pattern SHORT_RE = Pattern.compile("^\\d{6}$");
 
+    /** 发号请求在连接超时/瞬时 IO 错误时的尝试次数（首试 + 2 次重试），扛住单次丢包。 */
+    private static final int MAX_ATTEMPTS = 3;
+
     private static final HttpClient CLIENT = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(4))
+            .connectTimeout(Duration.ofSeconds(8))
             .version(HttpClient.Version.HTTP_1_1)
             .build();
 
@@ -297,7 +300,7 @@ public final class RoomCodeService {
 
     private static JSONObject get(String path) throws IOException, InterruptedException {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(base + path))
-                .timeout(Duration.ofSeconds(6))
+                .timeout(Duration.ofSeconds(10))
                 .GET();
         if (!token.isEmpty()) b.header("X-Token", token);
         return send(b.build());
@@ -305,7 +308,7 @@ public final class RoomCodeService {
 
     private static JSONObject post(String path, JSONObject body) throws IOException, InterruptedException {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(base + path))
-                .timeout(Duration.ofSeconds(6))
+                .timeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/json; charset=utf-8")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8));
         if (!token.isEmpty()) b.header("X-Token", token);
@@ -313,11 +316,22 @@ public final class RoomCodeService {
     }
 
     private static JSONObject send(HttpRequest req) throws IOException, InterruptedException {
-        HttpResponse<String> r;
-        try {
-            r = CLIENT.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        } catch (IOException e) {
-            throw new IOException("连不上发号服务器（" + base + "）：" + describe(e));
+        HttpResponse<String> r = null;
+        IOException last = null;
+        // 传输层（连接超时/瞬时 IO 错误）自动重试；拿到响应后的业务错误不重试。
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                r = CLIENT.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                break;
+            } catch (IOException e) {
+                last = e;
+                if (attempt < MAX_ATTEMPTS) {
+                    Thread.sleep(600L);
+                }
+            }
+        }
+        if (r == null) {
+            throw new IOException("连不上发号服务器（" + base + "）：" + describe(last), last);
         }
         String body = r.body() == null ? "" : r.body();
         JSONObject o;

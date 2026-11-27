@@ -133,7 +133,7 @@ public class ForgeInstaller {
     }
 
     /** 查询某 MC 版本的最新（latest）与推荐（recommended）加载器版本。
-     *  顺序：BMCLAPI /forge/promos（PCL 同款，国内镜像稳定）→ 官方 promotions_slim.json →
+     *  顺序：BMCLAPI /forge/promos（国内镜像稳定）→ 官方 promotions_slim.json →
      *  maven-metadata（BMCLAPI 镜像优先）取最新稳定 build。
      *  官方源（files.minecraftforge.net）国内直连经常超时，不能作为优先源。 */
     public String[] latestVersions(Platform p, String mc) throws Exception {
@@ -147,7 +147,7 @@ public class ForgeInstaller {
         }
         Exception firstErr = null;
         // 1+2) BMCLAPI forge/promos（数组结构：[{"name":"1.21.1-latest","build":{"version":"52.1.20"}}]）
-        // 与官方 promotions_slim.json 双路并发抢答（PCL 同款思路：镜像/官方谁快用谁，慢源不阻塞、不卡 60s）
+        // 与官方 promotions_slim.json 双路并发抢答（通用思路：镜像/官方谁快用谁，慢源不阻塞、不卡 60s）
         try {
             String body = Http.getTextRace("https://bmclapi2.bangbang93.com/forge/promos", promotionsUrl(p));
             String latest = null, rec = null;

@@ -26,7 +26,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * 陶瓦联机（Terracotta）内核封装 —— 与 HMCL 同一条接入路径。
+ * 陶瓦联机（Terracotta）内核封装 —— 标准接入路径。
  *
  * <p>陶瓦是一个自带 EasyTier 的 Rust 单文件程序，不需要管理员权限、不需要装 wintun：
  * 启动器用 {@code terracotta --hmcl <file>} 把它拉起来，它就绪后把本机 HTTP 控制端口

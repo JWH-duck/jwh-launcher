@@ -6,7 +6,7 @@
 
     <groupId>com.jwh</groupId>
     <artifactId>jwh-launcher</artifactId>
-    <version>1.0.24</version>
+    <version>1.0.25</version>
     <packaging>jar</packaging>
 
     <name>JWH Launcher</name>

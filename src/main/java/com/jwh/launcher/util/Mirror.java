@@ -3,7 +3,7 @@ package com.jwh.launcher.util;
 import com.jwh.launcher.config.LauncherConfig;
 
 /**
- * 下载源镜像重写：官方 Mojang 域名 → BMCLAPI 国内镜像（PCL/HMCL 同款）。
+ * 下载源镜像重写：官方 Mojang 域名 → BMCLAPI 国内镜像（通用做法）。
  * 只切换下载地址，文件路径与校验逻辑不变。
  */
 public final class Mirror {
@@ -17,7 +17,7 @@ public final class Mirror {
     private Mirror() {
     }
     /**
-     * 自动测速选择下载源（PCL 同款）：分别探测 BMCLAPI 与官方 Mojang 的往返延迟，
+     * 自动测速选择下载源：分别探测 BMCLAPI 与官方 Mojang 的往返延迟，
      * 返回较快者（"bmclapi"/"official"）。两者都失败时默认 BMCLAPI（国内玩家主场景）。
      * 各测 2 次取平均值，减少抖动误判。
      */
@@ -54,7 +54,7 @@ public final class Mirror {
             return BMCLAPI + "/maven/" + url.substring("https://maven.fabricmc.net/".length());
         }
         if (url.startsWith("https://maven.neoforged.net/")) {
-            // NeoForge/Forge 官方 maven → 国内镜像（PCL/HMCL 同款；官方源国内常超时）
+            // NeoForge/Forge 官方 maven → 国内镜像（国内镜像；官方源国内常超时）
             String p = url.substring("https://maven.neoforged.net/".length());
             if (p.startsWith("releases/")) p = p.substring("releases/".length());
             return BMCLAPI + "/maven/" + p;

@@ -24,7 +24,7 @@ import java.util.zip.ZipOutputStream;
 /**
  * 整合包导出：把一个本地实例打包成通用整合包 zip。
  *
- * <p>输出结构（与 CurseForge / HMCL / PCL 的整合包约定一致，任何启动器都能识别）：
+ * <p>输出结构（整合包通用约定，任何启动器都能识别）：
  * <pre>
  *   manifest.json          CurseForge 清单（minecraft.version + modLoaders + overrides）
  *   jwh-pack.json          本启动器的完整元数据（mod 清单、sha1、大小、加载器、时间）
@@ -37,7 +37,7 @@ import java.util.zip.ZipOutputStream;
  *
  * <p>导出两种格式，任选其一：
  * <ul>
- *   <li>{@link Format#CURSEFORGE}：manifest.json + overrides/，PCL / HMCL / CurseForge 认</li>
+ *   <li>{@link Format#CURSEFORGE}：manifest.json + overrides/，常见启动器与 CurseForge 认</li>
  *   <li>{@link Format#MODRINTH}：modrinth.index.json + overrides/，Modrinth App / Prism 认（.mrpack）</li>
  * </ul>
  * 两种格式都额外带一份 jwh-pack.json（本启动器自己再导入时用）。

@@ -2,7 +2,11 @@ package com.jwh.launcher.auth;
 
 import com.jwh.launcher.config.LauncherConfig;
 import com.jwh.launcher.config.ConfigManager;
+import com.jwh.launcher.util.Http;
 import org.json.JSONObject;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /**
  * 账号服务：离线登录、微软登录（授权码/刷新）、账号保存与选择。
@@ -28,6 +32,78 @@ public class AuthService {
     /** 微软 Device Code 登录：用轮询拿到的 (access_token, refresh_token) 完成登录并保存账号。 */
     public LauncherConfig.Account loginMicrosoftWithTokens(JSONObject msToken) throws Exception {
         return finishMicrosoft(msToken);
+    }
+
+    /**
+     * LittleSkin 账号密码登录：认证 → 拉皮肤/披风 → 写入账号并选中。
+     * 与旧弹窗共用同一套落库逻辑；{@code remember} 仅记住账号名，不保存密码。
+     */
+    public LauncherConfig.Account loginLittleSkin(String user, String pass, boolean remember) throws Exception {
+        LittleSkinAuth.Result r = LittleSkinAuth.authenticate(LittleSkinAuth.DEFAULT_API, user, pass, "");
+
+        LittleSkinAuth.Textures tex = null;
+        String skinFile = "";
+        String capeFile = "";
+        Boolean slim = null;
+        try {
+            tex = LittleSkinAuth.fetchTextures(LittleSkinAuth.DEFAULT_API, r.profileId);
+            Path dir = config.minecraftPath().resolve("skins").resolve("library");
+            if (tex != null && tex.hasSkin()) {
+                Files.createDirectories(dir);
+                String name = "皮肤站-" + r.profileName + ".png";
+                Path p = dir.resolve(name);
+                if (Http.download(tex.skinUrl, p)) {
+                    skinFile = name;
+                    slim = tex.slim ? Boolean.TRUE : Boolean.FALSE;
+                }
+            }
+            if (tex != null && tex.hasCape()) {
+                Files.createDirectories(dir);
+                String name = "皮肤站-" + r.profileName + "-cape.png";
+                Path p = dir.resolve(name);
+                if (Http.download(tex.capeUrl, p)) capeFile = name;
+            }
+        } catch (Exception ignored) {
+            // 纹理拿不到不阻断登录，后续可在皮肤库页手动重同步
+        }
+
+        LauncherConfig.Account acc = new LauncherConfig.Account();
+        acc.type = LauncherConfig.Account.Type.LITTLESKIN;
+        acc.displayName = r.profileName;
+        acc.userName = r.profileName;
+        acc.uuid = LittleSkinAuth.withDashes(r.profileId);
+        acc.accessToken = r.accessToken;
+        acc.refreshToken = r.clientToken;
+        acc.lsApiRoot = LittleSkinAuth.DEFAULT_API;
+        acc.skinFile = skinFile;
+        acc.capeFile = capeFile;
+        acc.skinSlim = slim;
+
+        // 复用已有的同名 LittleSkin 账号，避免重复添加
+        LauncherConfig.Account existing = null;
+        for (LauncherConfig.Account a : config.accounts) {
+            if (a.type == LauncherConfig.Account.Type.LITTLESKIN && a.uuid.equals(acc.uuid)) {
+                existing = a;
+                break;
+            }
+        }
+        if (existing != null) {
+            existing.displayName = acc.displayName;
+            existing.userName = acc.userName;
+            existing.accessToken = acc.accessToken;
+            existing.refreshToken = acc.refreshToken;
+            existing.skinFile = skinFile;
+            existing.capeFile = capeFile;
+            existing.skinSlim = slim;
+            config.selectedAccount = config.accounts.indexOf(existing);
+        } else {
+            config.accounts.add(acc);
+            config.selectedAccount = config.accounts.size() - 1;
+        }
+
+        config.lsSavedUser = remember ? user : "";
+        save();
+        return existing != null ? existing : acc;
     }
 
     /** 使用保存的 refresh_token 静默刷新。返回刷新后的账号，失败抛异常。 */

@@ -40,7 +40,7 @@ public class DownloadProgressDialog {
         String btnBg = dark ? "rgba(255,255,255,0.10)" : "rgba(31,35,40,0.06)";
         String btnHover = dark ? "rgba(255,255,255,0.18)" : "rgba(31,35,40,0.12)";
 
-        stage = new Stage(StageStyle.UTILITY);
+        stage = new Stage(StageStyle.TRANSPARENT);
         stage.setTitle(title == null ? "下载进度" : title);
 
         titleLabel = new Label(title == null ? "下载进度" : title);
@@ -77,6 +77,7 @@ public class DownloadProgressDialog {
                 + "-fx-border-radius:14; -fx-border-color:" + border + ";");
 
         Scene scene = new Scene(box);
+        scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
         Ui.applyStylesheet(scene);
         stage.setScene(scene);
         stage.setResizable(false);

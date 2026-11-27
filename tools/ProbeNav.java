@@ -35,6 +35,14 @@ public class ProbeNav extends Application {
         stage.setScene(scene);
         stage.show();
 
+        // 强制展开导航，核对宽栏 + 文字标签显隐
+        try {
+            Method ex = LauncherApp.class.getDeclaredMethod("setNavExpanded", boolean.class);
+            ex.setAccessible(true);
+            ex.invoke(app, true);
+        } catch (Throwable ignored) {
+        }
+
         PauseTransition p = new PauseTransition(Duration.millis(700));
         p.setOnFinished(e -> {
             try {

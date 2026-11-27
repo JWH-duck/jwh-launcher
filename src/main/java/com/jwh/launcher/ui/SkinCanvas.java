@@ -69,6 +69,8 @@ public class SkinCanvas extends Canvas {
     private int[] capePx;
     /** 手动指定宽/窄模型：null=按贴图自动判定，true=细手臂，false=宽手臂 */
     private Boolean slimOverride;
+    /** 模型整体缩放倍率：1.0 为默认取景，皮肤库主预览可调小。 */
+    private double modelScale = 1.0;
     private static final boolean DEBUG_SKIN = Boolean.getBoolean("jwh.skin.debug");
     private Image tex;             // 64×64 纹理（供 drawImage）
     private boolean slim;          // 细手臂模型
@@ -221,6 +223,9 @@ public class SkinCanvas extends Canvas {
     public SkinCanvas(double w, double h) {
         super(w, h);
     }
+
+    /** 设置模型整体缩放倍率（1.0 默认；小于 1 缩小）。 */
+    public void setModelScale(double scale) { this.modelScale = scale; }
 
     // ---------------------------------------------------------------- 载入
 
@@ -661,7 +666,7 @@ public class SkinCanvas extends Canvas {
         }
 
         // 取景：对齐美西螈 page 预设（fov 35 / zoom 0.96），模型尽量占满舞台；顶部留 12% 余量避免切头
-        double scale = Math.min(H * 0.80 / 32.0, W * 0.76 / 22.0);
+        double scale = Math.min(H * 0.80 / 32.0, W * 0.76 / 22.0) * modelScale;
         // 基准点必须落在整像素上：这个渲染器是硬边逐像素光栅化，没有抗锯齿，
         // 基准点带 .5 小数会让整个模型的边永远停在两像素之间，截帧看着像糊了一层。
         double cx = Math.rint(W / 2.0 - W * 0.048);

@@ -52,6 +52,7 @@
 .ghost-btn {
     -fx-background-color: rgba(255, 255, 255, 0.08);
     -fx-text-fill: #e8eaed;
+    -fx-font-size: 16px;
     -fx-background-radius: 6;
     -fx-border-color: rgba(255, 255, 255, 0.14);
     -fx-border-radius: 6;
@@ -223,20 +224,23 @@
 }
 
 .combo-box-popup .list-view {
-    -fx-background-color: rgba(30, 35, 44, 0.96);
-    -fx-background-radius: 6;
+    -fx-background-color: #2c2336;
+    -fx-background-radius: 10;
     -fx-border-color: rgba(255, 255, 255, 0.14);
+    -fx-padding: 4;
 }
 .combo-box-popup .list-cell {
     -fx-background-color: transparent;
     -fx-text-fill: #e8eaed;
+    -fx-background-radius: 8;
+    -fx-padding: 8 12;
 }
 .combo-box-popup .list-cell:hover {
-    -fx-background-color: rgba(63, 169, 245, 0.12);
+    -fx-background-color: rgba(255, 255, 255, 0.08);
 }
 .combo-box-popup .list-cell:filled:selected {
-    -fx-background-color: #3FA9F5;
-    -fx-text-fill: white;
+    -fx-background-color: #d982c2;
+    -fx-text-fill: #ffffff;
 }
 
 .text-area {
@@ -252,4 +256,293 @@
     -fx-text-fill: #e8eaed;
     -fx-background-radius: 6;
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.35), 8, 0, 0, 2);
+}
+
+/* ===== v1.0.25 紫系新主页（对标 PS 稿：#733e6f 主紫 / #10061c 导航深紫 / #d982c2 强调粉） ===== */
+.jwh-titlebar {
+    -fx-background-color: #733e6f;
+    /* 左上、右上跟随外壳圆角；左右下角为直角 */
+    -fx-background-radius: 14 14 0 0;
+}
+.jwh-titlebar .label {
+    -fx-text-fill: #ffffff;
+}
+.jwh-nav {
+    -fx-background-color: #1f1529;
+    -fx-background-radius: 18 0 0 0;
+}
+.jwh-nav-item {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-text-fill: #e9e1ec;
+    -fx-alignment: CENTER;
+    -fx-font-size: 15px;
+    -fx-padding: 8 14;
+    -fx-background-radius: 10;
+    -fx-cursor: hand;
+    -fx-graphic-text-gap: 12;
+}
+.jwh-nav-item:hover {
+    -fx-background-color: rgba(255, 255, 255, 0.08);
+}
+.jwh-nav-item.active {
+    -fx-background-color: #1c0d2e;
+    -fx-text-fill: #d982c2;
+    -fx-font-weight: bold;
+}
+.jwh-card {
+    -fx-background-color: #733e6f;
+    -fx-background-radius: 16;
+}
+.jwh-primary {
+    -fx-background-color: #733e6f;
+    -fx-text-fill: #ffffff;
+    -fx-background-radius: 12;
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+}
+.jwh-primary:hover {
+    -fx-background-color: #864b82;
+}
+.jwh-dark {
+    -fx-background-color: #1f1529;
+    -fx-text-fill: #ffffff;
+    -fx-background-radius: 11;
+    -fx-cursor: hand;
+}
+.jwh-dark:hover {
+    -fx-background-color: #2c1d3a;
+}
+
+/* ===== 下载中心：紫系标签行 + 胶囊筛选 + 绿色圆形下载钮（对标 下载.svg） ===== */
+.jwh-download-tabs.tab-pane .tab-header-background {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+}
+
+.jwh-download-tabs.tab-pane .tab {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-padding: 10 18 10 18;
+    -fx-cursor: hand;
+}
+.jwh-download-tabs.tab-pane .tab:last-child {
+    -fx-border-color: transparent;
+}
+.jwh-download-tabs.tab-pane .tab:hover {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+}
+.jwh-download-tabs.tab-pane .tab:selected,
+.jwh-download-tabs.tab-pane .tab:selected:focused,
+.jwh-download-tabs.tab-pane .tab:selected:hover {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent transparent #d982c2 transparent;
+    -fx-border-width: 0 0 2 0;
+    -fx-background-radius: 0;
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+}
+.jwh-download-tabs.tab-pane .tab .tab-label {
+    -fx-text-fill: rgba(255, 255, 255, 0.55);
+    -fx-font-size: 16px;
+}
+.jwh-download-tabs.tab-pane .tab:selected .tab-label {
+    -fx-text-fill: #ffffff;
+    -fx-font-weight: bold;
+    -fx-font-size: 17px;
+}
+
+/* 筛选条内胶囊下拉（深紫底上的半透明胶囊） */
+.jwh-capsule {
+    -fx-background-color: #2c2336;
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 15px;
+    -fx-background-radius: 10;
+    -fx-border-color: transparent;
+    -fx-border-radius: 10;
+    -fx-padding: 7 8;
+}
+.jwh-capsule .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 15px;
+    -fx-padding: 0 6;
+}
+.jwh-capsule .arrow-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0 6;
+    -fx-pref-width: 20;
+}
+.jwh-capsule .arrow-button .arrow {
+    -fx-background-color: rgba(255, 255, 255, 0.7);
+}
+
+/* 深色搜索框：包装层提供圆角底，输入框透明 */
+.jwh-search-wrap {
+    -fx-background-color: #2c2336;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+    -fx-padding: 7 12;
+}
+.jwh-search {
+    -fx-background-color: transparent;
+    -fx-text-fill: #ffffff;
+    -fx-prompt-text-fill: rgba(255, 255, 255, 0.55);
+    -fx-background-radius: 10;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-border-radius: 10;
+    -fx-padding: 0 4;
+    -fx-font-size: 15px;
+}
+.jwh-search:focused {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+}
+.jwh-search .text {
+    -fx-text-fill: #ffffff;
+}
+.jwh-search .prompt-text {
+    -fx-text-fill: rgba(255, 255, 255, 0.55);
+}
+
+/* 绿色圆形下载钮 */
+.jwh-fab {
+    -fx-background-color: #41cc3a;
+    -fx-background-insets: 0;
+    -fx-background-radius: 38;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-border-radius: 38;
+    -fx-padding: 0;
+    -fx-text-fill: #ffffff;
+    -fx-font-weight: bold;
+    -fx-font-size: 17px;
+    -fx-min-width: 76;
+    -fx-min-height: 76;
+    -fx-max-width: 76;
+    -fx-max-height: 76;
+    -fx-cursor: hand;
+}
+.jwh-fab:hover {
+    -fx-background-color: #55d84e;
+}
+.jwh-fab:pressed {
+    -fx-background-color: #37b331;
+}
+.jwh-fab:disabled {
+    -fx-background-color: rgba(65, 204, 58, 0.45);
+    -fx-text-fill: rgba(255, 255, 255, 0.7);
+}
+
+/* 下载页版本列表：去除外圈浅色描边，背景透明透出紫底 */
+.jwh-dl-list, .jwh-dl-list .list-cell {
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-background-color: transparent;
+}
+
+
+/* ===== 社区页排序下拉：透明底白描边，去除灰色底板与箭头灰块 ===== */
+.jwh-sort-combo {
+    -fx-background-color: transparent;
+    -fx-border-color: rgba(255, 255, 255, 0.18);
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+    -fx-text-fill: #ffffff;
+}
+.jwh-sort-combo .arrow-button {
+    -fx-background-color: transparent;
+}
+.jwh-sort-combo .arrow-button .arrow {
+    -fx-background-color: #ffffff;
+}
+.jwh-sort-combo .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #ffffff;
+}
+
+/* 下载页筛选下拉：去除内层深色圆角矩形框，外层胶囊保留 */
+.jwh-capsule-plain .list-cell {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+.jwh-capsule-plain .arrow-button {
+    -fx-background-color: transparent;
+}
+
+/* 皮肤库滚动区：viewport 上卡片深紫黑底，避免透出全局灰色根背景 */
+.jwh-skins-scroll {
+    -fx-background-color: transparent;
+}
+.jwh-skins-scroll .viewport {
+    -fx-background-color: #1F1529;
+}
+
+/* 内存滑块：原生轨道隐藏，粉填充由叠加 Region 绘制；白圆钮粉边 */
+.jwh-mem-slider {
+    -fx-background-color: transparent;
+}
+.jwh-mem-slider .track {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+}
+.jwh-mem-slider * {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+}
+.jwh-mem-slider .colored-track {
+    -fx-background-color: transparent;
+}
+.jwh-mem-slider .thumb {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 0;
+    -fx-padding: 0;
+    -fx-pref-width: 0;
+    -fx-pref-height: 0;
+    -fx-min-width: 0;
+    -fx-min-height: 0;
+    -fx-max-width: 0;
+    -fx-max-height: 0;
+    -fx-border-color: transparent;
+    -fx-border-width: 0;
+    -fx-effect: none;
+}
+.jwh-mem-slider:disabled .thumb {
+    -fx-background-color: transparent;
+}
+
+/* 字体颜色选择器：仅保留色块，hex 文本由旁侧长条展示 */
+.jwh-color-chip {
+    -fx-pref-width: 48;
+    -fx-min-width: 48;
+    -fx-max-width: 48;
+}
+.jwh-color-chip .arrow-button {
+    -fx-pref-width: 0;
+    -fx-min-width: 0;
+    -fx-max-width: 0;
+    -fx-padding: 0;
+    -fx-background-color: transparent;
+    -fx-opacity: 0;
+}
+.jwh-color-chip .arrow-button .arrow {
+    -fx-opacity: 0;
+}
+.jwh-color-chip .color-picker-label {
+    -fx-content-display: graphic-only;
+    -fx-padding: 0 8;
 }

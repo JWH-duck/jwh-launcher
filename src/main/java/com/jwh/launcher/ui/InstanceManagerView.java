@@ -124,7 +124,7 @@ public class InstanceManagerView {
      * <p>包里带：mods（含已禁用的 .jar.disabled，保持原状态）、config、options.txt、
      * servers.dat、资源包、光影包；不带存档 saves（个人进度，体积大）。
      * 结构为 manifest.json（CurseForge 清单）+ overrides/ + jwh-pack.json（本启动器元数据），
-     * PCL / HMCL 等启动器可直接识别为整合包。
+     * 常见启动器可直接识别为整合包。
      */
     private void exportModpack() {
         LocalVersions.LocalVersion info = null;

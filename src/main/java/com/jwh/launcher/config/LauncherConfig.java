@@ -52,11 +52,11 @@ public class LauncherConfig {
     public int minMemory = 1024;
     /** 内存分配模式：auto=每次打开自动按本机可用内存分配安全值 / custom=手动自定义（不自动检测） */
     public String memoryMode = "auto";
-    /** 版本隔离：true = 每个版本独立 saves/mods/config（类似 PCL 的版本隔离） */
-    public boolean versionIsolation = false;
+    /** 版本隔离：true = 每个版本独立 saves/mods/config */
+    public boolean versionIsolation = true;
     /** 下载并发线程数 */
     public int downloadThreads = 8;
-    /** 内容下载源：auto=启动时自动测速选择最快的源（PCL 同款，默认）/ official=官方 Mojang 源 / bmclapi=BMCLAPI 国内镜像。 */
+    /** 内容下载源：auto=启动时自动测速选择最快的源（默认）/ official=官方 Mojang 源 / bmclapi=BMCLAPI 国内镜像。 */
     public String contentSource = "auto";
     /** 内存态：auto 模式下最近一次测速选中的实际源（"bmclapi"/"official"），不写入配置文件。 */
     public String resolvedSource = "";
@@ -67,6 +67,14 @@ public class LauncherConfig {
     public String jvmArgs = "";
     /** 是否显示游戏日志窗口 */
     public boolean showGameLog = true;
+    /** 背景音乐曲目展示名（去扩展名，小写归一）；空 = 启动时随机播放一首（默认）。 */
+    public String musicTrack = "";
+    /** 游戏窗口模式：windowed=窗口化（用 windowWidth/Height） / fullscreen=全屏。 */
+    public String windowMode = "windowed";
+    /** 界面语言；当前仅简体中文 zh_CN，其余项预留禁用。 */
+    public String language = "zh_CN";
+    /** 更新通道：stable=正式版 / beta=测试版（测试版更新更频繁，可能不稳定）。 */
+    public String updateChannel = "stable";
     /** LittleSkin 上次登录用的账号（只记账号，不存密码） */
     public String lsSavedUser = "";
 
@@ -152,7 +160,7 @@ public class LauncherConfig {
         return versionIsolation ? versionsPath().resolve(versionId) : minecraftPath();
     }
 
-    /** 是否使用 BMCLAPI 国内镜像源（PCL/HMCL 同款，国内下载更快更稳）。 */
+    /** 是否使用 BMCLAPI 国内镜像源（国内镜像，下载更快更稳）。 */
     public boolean useBmclapi() {
         if ("official".equals(contentSource)) return false;
         if ("bmclapi".equals(contentSource)) return true;
@@ -180,6 +188,10 @@ public class LauncherConfig {
         o.put("windowHeight", windowHeight);
         o.put("jvmArgs", jvmArgs);
         o.put("showGameLog", showGameLog);
+        o.put("musicTrack", musicTrack);
+        o.put("windowMode", windowMode);
+        o.put("language", language);
+        o.put("updateChannel", updateChannel);
         o.put("bgMode", bgMode);
         o.put("bgImagePath", bgImagePath);
         o.put("textColor", textColor);
@@ -208,16 +220,20 @@ public class LauncherConfig {
         if (o.has("maxMemory")) c.maxMemory = o.optInt("maxMemory", 4096);
         if (o.has("minMemory")) c.minMemory = o.optInt("minMemory", 1024);
         if (o.has("memoryMode")) c.memoryMode = o.optString("memoryMode", "auto");
-        if (o.has("versionIsolation")) c.versionIsolation = o.optBoolean("versionIsolation", false);
+        if (o.has("versionIsolation")) c.versionIsolation = o.optBoolean("versionIsolation", true);
         if (o.has("downloadThreads")) c.downloadThreads = Math.max(1, o.optInt("downloadThreads", 8));
         if (o.has("contentSource")) c.contentSource = o.optString("contentSource", "auto");
         if (o.has("windowWidth")) c.windowWidth = o.optInt("windowWidth", 875);
         if (o.has("windowHeight")) c.windowHeight = o.optInt("windowHeight", 554);
         if (o.has("jvmArgs")) c.jvmArgs = o.optString("jvmArgs", "");
         if (o.has("showGameLog")) c.showGameLog = o.optBoolean("showGameLog", true);
+        if (o.has("musicTrack")) c.musicTrack = o.optString("musicTrack", "");
+        if (o.has("windowMode")) c.windowMode = "fullscreen".equals(o.optString("windowMode", "windowed")) ? "fullscreen" : "windowed";
+        if (o.has("language")) c.language = o.optString("language", "zh_CN");
+        if (o.has("updateChannel")) c.updateChannel = "beta".equals(o.optString("updateChannel", "stable")) ? "beta" : "stable";
         // 注意：旧配置里的 curseForgeKey 字段已不再读取——Key 改为环境变量注入
-        // （JWH_CURSEFORGE_API_KEY / PCL_CURSEFORGE_API_KEY，见 util.CurseForgeKey），
-        // 与 PCL 开源版同款机制：源码、UI、配置文件均不落 key。
+        // （JWH_CURSEFORGE_API_KEY，见 util.CurseForgeKey），
+        // 源码、UI、配置文件均不落 key。
         if (o.has("bgMode")) c.bgMode = o.optString("bgMode", "default");
         if (o.has("bgImagePath")) c.bgImagePath = o.optString("bgImagePath", "");
         if (o.has("textColor")) c.textColor = o.optString("textColor", "");

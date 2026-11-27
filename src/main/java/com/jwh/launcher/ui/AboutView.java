@@ -46,7 +46,8 @@ public class AboutView {
         VBox updateCard = card();
         Label updateTitle = new Label("软件更新");
         updateTitle.setStyle("-fx-font-size:14px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT + ";");
-        Updater updater = new Updater(LauncherApp.appDir(), LauncherApp.APP_VERSION);
+        Updater updater = new Updater(LauncherApp.appDir(), LauncherApp.APP_VERSION,
+                app.config == null ? "stable" : app.config.updateChannel);
         Label source = new Label("更新源：" + updater.manifestUrl());
         source.setWrapText(true);
         source.setMaxWidth(560);

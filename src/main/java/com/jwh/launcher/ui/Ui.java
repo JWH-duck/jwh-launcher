@@ -1,8 +1,6 @@
 package com.jwh.launcher.ui;
 
 import javafx.application.Platform;
-import javafx.scene.control.Alert;
-import javafx.scene.control.ButtonType;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -85,9 +83,9 @@ public final class Ui {
         return cfgVal;
     }
     public static final javafx.scene.image.Image GRASS_BLOCK = loadImage("/grass_block.png");
-    /** 愚人节版本图标：粘液块（MC 官方贴图，HMCL 同款）。 */
+    /** 愚人节版本图标：粘液块（MC 官方贴图）。 */
     public static final javafx.scene.image.Image SLIME_BLOCK = loadImage("/slime_block.png");
-    /** 远古版图标：工作台正面（MC 官方贴图，HMCL 同款）。 */
+    /** 远古版图标：工作台正面（MC 官方贴图）。 */
     public static final javafx.scene.image.Image CRAFTING_TABLE = loadImage("/crafting_table_front.png");
 
     /** 皮肤预览「走动」开关图标：深色线稿用于浅色背景，白色线稿用于深色背景。 */
@@ -201,42 +199,6 @@ public final class Ui {
     /** 主窗口句柄：弹窗挂到它身上，避免弹窗跑到主窗后面/被当成“没反应”。 */
     public static volatile javafx.stage.Window dialogOwner = null;
 
-    /** 弹窗统一样式：放大字号 + 归属主窗口 + 居中置顶。 */
-    private static void styleDialog(Alert a) {
-        try {
-            a.getDialogPane().setStyle("-fx-font-size:14px;");
-        } catch (Exception ignored) {
-        }
-        try {
-            javafx.stage.Window owner = dialogOwner;
-            if (owner == null) {
-                for (javafx.stage.Window w : javafx.stage.Window.getWindows()) {
-                    if (w instanceof javafx.stage.Stage s && s.isShowing()) {
-                        owner = s;
-                        break;
-                    }
-                }
-            }
-            if (owner != null && owner.isShowing()) {
-                a.initOwner(owner);
-                javafx.stage.Window o = owner;
-                a.setOnShown(ev -> {
-                    try {
-                        a.setX(o.getX() + (o.getWidth() - a.getWidth()) / 2);
-                        a.setY(o.getY() + (o.getHeight() - a.getHeight()) / 2);
-                        javafx.stage.Window self = a.getDialogPane().getScene().getWindow();
-                        if (self != null) {
-                            self.requestFocus();
-                        }
-                        a.getDialogPane().requestFocus();
-                    } catch (Exception ignored) {
-                    }
-                });
-            }
-        } catch (Exception ignored) {
-        }
-    }
-
     /**
      * 列表滚轮接管：无论 ListView 处于何种布局/嵌套，滚轮事件都会先经过
      * 本过滤器，直接驱动垂直滚动条（decrement/increment），保证滚轮一定
@@ -277,7 +239,7 @@ public final class Ui {
         }
     }
 
-    /** 页面切换动效（进入）：新页面从右侧滑入并淡入，PCL 风格的翻页手感。 */
+    /** 页面切换动效（进入）：新页面从右侧滑入并淡入，通用翻页手感。 */
     public static void pageIn(javafx.scene.Node node) {
         if (node == null) return;
         int ms = pageAnimMs();
@@ -333,17 +295,12 @@ public final class Ui {
     }
 
     public static void error(String title, String msg) {
-        Alert a = new Alert(Alert.AlertType.ERROR, null, ButtonType.OK);
-        a.setTitle(title);
-        a.setHeaderText(title);
         javafx.scene.control.Label body = new javafx.scene.control.Label(msg == null ? "" : msg);
         body.setWrapText(true);
         body.setMaxWidth(460);
         body.setStyle("-fx-font-size:13px;");
-        a.getDialogPane().setContent(body);
-        a.getDialogPane().setPrefWidth(520);
-        styleDialog(a);
-        a.showAndWait();
+        new JwhDialog<Void>(title, body, java.util.List.of(
+                new JwhDialog.ButtonDef<>("确定", null, true))).showAndWait();
     }
 
     /** 信息提示 sink：LauncherApp 启动时注册后，info 改为窗口内 toast（不弹窗）。 */
@@ -355,19 +312,23 @@ public final class Ui {
             toastSink.accept(text);
             return;
         }
-        Alert a = new Alert(Alert.AlertType.INFORMATION, msg, ButtonType.OK);
-        a.setTitle(title);
-        a.setHeaderText(title);
-        styleDialog(a);
-        a.showAndWait();
+        javafx.scene.control.Label body = new javafx.scene.control.Label(msg == null ? "" : msg);
+        body.setWrapText(true);
+        body.setMaxWidth(430);
+        body.setStyle("-fx-font-size:13px;");
+        new JwhDialog<Void>(title, body, java.util.List.of(
+                new JwhDialog.ButtonDef<>("确定", null, true))).showAndWait();
     }
 
     public static boolean confirm(String title, String msg) {
-        Alert a = new Alert(Alert.AlertType.CONFIRMATION, msg, ButtonType.YES, ButtonType.NO);
-        a.setTitle(title);
-        a.setHeaderText(title);
-        styleDialog(a);
-        return a.showAndWait().orElse(ButtonType.NO) == ButtonType.YES;
+        javafx.scene.control.Label body = new javafx.scene.control.Label(msg == null ? "" : msg);
+        body.setWrapText(true);
+        body.setMaxWidth(430);
+        body.setStyle("-fx-font-size:13px;");
+        Boolean ok = new JwhDialog<Boolean>(title, body, java.util.List.of(
+                new JwhDialog.ButtonDef<>("确定", Boolean.TRUE, false),
+                new JwhDialog.ButtonDef<>("取消", Boolean.FALSE, true))).showAndWait();
+        return Boolean.TRUE.equals(ok);
     }
 
     /**
@@ -388,7 +349,7 @@ public final class Ui {
         }
 
         javafx.scene.control.RadioButton cf = new javafx.scene.control.RadioButton(
-                "CurseForge 结构（.zip）：PCL / HMCL / CurseForge 认");
+                "CurseForge 结构（.zip）：常见启动器与 CurseForge 认");
         javafx.scene.control.RadioButton mr = new javafx.scene.control.RadioButton(
                 "Modrinth 结构（.mrpack）：Modrinth App / Prism 认");
         javafx.scene.control.ToggleGroup tg = new javafx.scene.control.ToggleGroup();
@@ -406,13 +367,10 @@ public final class Ui {
                 body, new javafx.scene.control.Separator(), saves, cf, mr, hint);
         box.setPadding(new javafx.geometry.Insets(4, 0, 0, 0));
 
-        Alert a = new Alert(Alert.AlertType.CONFIRMATION, "", ButtonType.YES, ButtonType.NO);
-        a.setTitle(title);
-        a.setHeaderText(title);
-        a.getDialogPane().setContent(box);
-        a.getDialogPane().setPrefWidth(520);
-        styleDialog(a);
-        if (a.showAndWait().orElse(ButtonType.NO) != ButtonType.YES) return null;
+        Boolean ok = new JwhDialog<Boolean>(title, box, java.util.List.of(
+                new JwhDialog.ButtonDef<>("确定", Boolean.TRUE, false),
+                new JwhDialog.ButtonDef<>("取消", Boolean.FALSE, true))).showAndWait();
+        if (!Boolean.TRUE.equals(ok)) return null;
         return new int[]{saves.isSelected() ? 1 : 0, mr.isSelected() ? 1 : 0};
     }
 
@@ -436,19 +394,12 @@ public final class Ui {
         javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(10, body, field);
         box.setPadding(new javafx.geometry.Insets(4, 0, 0, 0));
 
-        javafx.scene.control.ButtonType okType =
-                new javafx.scene.control.ButtonType("确定", javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        javafx.scene.control.ButtonType cancelType =
-                new javafx.scene.control.ButtonType("取消", javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
-        Alert a = new Alert(Alert.AlertType.CONFIRMATION, "", okType, cancelType);
-        a.setTitle(title);
-        a.setHeaderText(title);
-        a.getDialogPane().setContent(box);
-        a.getDialogPane().setPrefWidth(500);
-        styleDialog(a);
+        Boolean ok = new JwhDialog<Boolean>(title, box, java.util.List.of(
+                new JwhDialog.ButtonDef<>("确定", Boolean.TRUE, false),
+                new JwhDialog.ButtonDef<>("取消", Boolean.FALSE, true))).showAndWait();
         // 弹窗打开后光标直接落在输入框里
         javafx.application.Platform.runLater(field::requestFocus);
-        if (a.showAndWait().orElse(cancelType) != okType) return null;
+        if (!Boolean.TRUE.equals(ok)) return null;
         String v = field.getText() == null ? "" : field.getText().trim();
         return v.isEmpty() ? null : v;
     }
@@ -499,7 +450,7 @@ public final class Ui {
      * 进度值通过 {@link ProgressHandle#setProgress} 上报；未上报数值时进度条保持 0。
      */
     public static ProgressHandle progressDialog(String title, String message) {
-        javafx.stage.Stage stage = new javafx.stage.Stage(javafx.stage.StageStyle.UTILITY);
+        javafx.stage.Stage stage = new javafx.stage.Stage(javafx.stage.StageStyle.TRANSPARENT);
         stage.setTitle(title);
 
         javafx.scene.control.Label label = new javafx.scene.control.Label(message == null ? "" : message);
@@ -514,9 +465,10 @@ public final class Ui {
 
         javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(12, label, bar);
         box.setPadding(new javafx.geometry.Insets(20, 22, 20, 22));
-        box.setStyle("-fx-background-color:" + BG + ";");
+        box.setStyle("-fx-background-color:" + BG + "; -fx-background-radius:16; -fx-border-radius:16;");
 
         javafx.scene.Scene scene = new javafx.scene.Scene(box);
+        scene.setFill(javafx.scene.paint.Color.TRANSPARENT);
         applyStylesheet(scene);
         stage.setScene(scene);
         stage.setResizable(false);

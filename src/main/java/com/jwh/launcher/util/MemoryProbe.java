@@ -28,7 +28,7 @@ public class MemoryProbe {
     }
 
     /** 本机物理内存总量（MB）；探测失败返回 0。 */
-    private static long totalPhysicalMB() {
+    public static long totalPhysicalMB() {
         try {
             com.sun.management.OperatingSystemMXBean os =
                     (com.sun.management.OperatingSystemMXBean)

@@ -34,7 +34,7 @@ public class ShaderTab {
     private final ComboBox<String> optifineBox = new ComboBox<>();
     private final TextArea note = new TextArea();
 
-    /** 版本下拉的 id → 显示名（HMCL 式：加载器实例显示 "1.21.1 · NeoForge 21.1.265"）。 */
+    /** 版本下拉的 id → 显示名（通用：加载器实例显示 "1.21.1 · NeoForge 21.1.265"）。 */
     private final java.util.Map<String, String> displayNames = new java.util.HashMap<>();
     /** 版本下拉的 id → 纯游戏版本（neoforge-21.1.265 → 1.21.1，供 API 使用）。 */
     private final java.util.Map<String, String> mcBases = new java.util.HashMap<>();
@@ -88,7 +88,8 @@ public class ShaderTab {
 
         // 目标版本
         versionBox.setPromptText("安装到的版本（必选）");
-        versionBox.setPrefWidth(220);
+        optifineBox.setPromptText("查询后选择 OptiFine 版本");
+        versionBox.setPrefWidth(300);
         versionBox.setCellFactory(c -> new javafx.scene.control.ListCell<>() {
             @Override
             protected void updateItem(String id, boolean empty) {
@@ -155,7 +156,7 @@ public class ShaderTab {
     }
 
     /**
-     * 刷新：填充本地可见实例下拉（HMCL 式）。
+     * 刷新：填充本地可见实例下拉。
      * 下拉显示合并名（如 "1.21.1 · NeoForge 21.1.265"），值为实例 id；
      * API 用纯游戏版本（mcBase），安装落点用实例 id 目录。
      */

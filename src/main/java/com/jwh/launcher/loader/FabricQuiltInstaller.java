@@ -389,7 +389,7 @@ public class FabricQuiltInstaller {
         if (listener != null) listener.onProgress("获取加载器元数据", 0, 3);
         String profile = null;
         Exception lastErr = null;
-        // 官方 meta 与 BMCLAPI 镜像并发抢答（PCL/HMCL 思路）：任一路先成功即用，慢源不再阻塞。
+        // 官方 meta 与 BMCLAPI 镜像并发抢答（通用思路）：任一路先成功即用，慢源不再阻塞。
         // 旧实现是「串行 + 每个源 3 轮重试」：BMCL 的 fabric-meta 取不到 profile 时每次连接
         // 都要硬等超时，2 个源 × 3 轮 × 3 次重试实测拖到 158 秒，玩家看到的就是
         // 「加载器下载卡住」。竞速后正常 2-4 秒返回。
@@ -464,7 +464,7 @@ public class FabricQuiltInstaller {
         return id;
     }
 
-    /** 文本拉取（加载器/版本元数据）：镜像与官方两路并发抢答，先成功者胜出（PCL 同款思路，慢源不阻塞）。 */
+    /** 文本拉取（加载器/版本元数据）：镜像与官方两路并发抢答，先成功者胜出（通用思路，慢源不阻塞）。 */
     private static String getTextAny(LauncherConfig cfg, String url, String versionId) throws Exception {
         String mirrored = com.jwh.launcher.util.Mirror.rewrite(cfg, url, versionId);
         if (mirrored.equals(url)) return Http.getText(url);

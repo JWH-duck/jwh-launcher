@@ -27,9 +27,9 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
- * Microsoft 正版登录弹窗（PCL 同款：设备码登录）。
+ * Microsoft 正版登录弹窗（设备码登录）。
  *
- * 和 PCL 2.99 一模一样：使用内置登录应用，
+ * 使用内置登录应用，
  * 点击「开始登录」→ 获取设备码并自动复制 → 自动打开浏览器登录网页（microsoft.com/devicelogin）→
  * 在网页中输入设备码并完成密码登录 → 本窗口后台按 interval 自动轮询，拿到令牌即完成登录。
  * 该流程不经过 Minecraft 官方授权确认页，风控门槛低，无需自行注册任何 Azure 应用。
@@ -76,12 +76,12 @@ public class MicrosoftLoginDialog {
         stage = new Stage();
         stage.setTitle("Microsoft 账号登录 · JWH");
 
-        Label title = new Label("使用 Microsoft 账号登录 Minecraft Java 版（PCL 同款）");
+        Label title = new Label("使用 Microsoft 账号登录 Minecraft Java 版");
         title.setStyle("-fx-font-size:16px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT + ";");
 
         MicrosoftAuthenticator.init(config);
 
-        stepLabel = label("和 PCL 一样：点击「开始登录」后，会弹出一个设备码并自动打开浏览器登录网页。"
+        stepLabel = label("点击「开始登录」后，会弹出一个设备码并自动打开浏览器登录网页。"
                 + "在网页中输入设备码、用密码完成微软登录，本窗口会自动完成后续登录（无需经过官方确认页）。");
         stepLabel.setStyle("-fx-text-fill:" + Ui.TEXT + "; -fx-font-size:13px;");
 
@@ -145,7 +145,7 @@ public class MicrosoftLoginDialog {
         return l;
     }
 
-    /** 开始 PCL 同款设备码登录：请求设备码 → 自动复制并打开登录网页 → 后台轮询换令牌。 */
+    /** 开始设备码登录：请求设备码 → 自动复制并打开登录网页 → 后台轮询换令牌。 */
     private void startDeviceLogin() {
         if (worker != null && worker.isAlive()) {
             setStatus("正在登录中，请先在浏览器网页里输入设备码…");
@@ -185,7 +185,7 @@ public class MicrosoftLoginDialog {
                 return;
             }
             openLoginSite();
-            // 后台按 interval 轮询（对齐 PCL WorkThread）
+            // 后台按 interval 轮询设备码状态
             try {
                 JSONObject token = MicrosoftAuthenticator.pollDeviceToken(dev, cancelPoll, (remain, lastError) -> {
                     setStatus(lastError == null

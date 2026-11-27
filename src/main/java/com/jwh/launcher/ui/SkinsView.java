@@ -29,9 +29,9 @@ import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
+import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.FlowPane;
@@ -45,15 +45,27 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class SkinsView {
+    /** 强调粉（选中填充 / 主按钮）。 */
+    private static final String PINK = "#D982C2";
+    /** 外层窗口 / 未选描边按钮透出的紫褐底。 */
+    private static final String OUTER_BG = "#733E6F";
+    /** 卡片底色（深紫黑，对齐稿面大卡）。 */
+    private static final String CARD_BG = "#1F1529";
+    /** 内嵌缩略图卡底。 */
+    private static final String CHIP_BG = "#281B31";
+    private static final String TEXT_PRIMARY = "#e8eaed";
+    private static final String TEXT_SUB = "#b9bfc7";
+    private static final String BORDER = "rgba(255,255,255,0.14)";
+    private static final String BORDER_SOFT = "rgba(255,255,255,0.08)";
+
     private final LauncherApp app;
-    private final VBox root = new VBox(12.0);
+    private final VBox root = new VBox(14.0);
     private final FlowPane grid = new FlowPane();
     private final Label countLabel = new Label();
     private final Label tipLabel = new Label();
     private final SkinCanvas preview;
     private final Label nameTag = new Label("");
-    private final Button useBtn = new Button("使用这个皮肤");
-    private final Button delBtn = new Button("删除");
+    private final Button delBtn = new Button("删除皮肤");
     private Path selected;
     private ScrollPane scroll;
     private boolean dragging;
@@ -62,17 +74,48 @@ public class SkinsView {
     private double dragStartYaw;
     private double dragStartPitch;
     private final List<VBox> boxes = new ArrayList<VBox>();
-    /** 预览区最左侧的「走动」开关；用无默认样式的容器承载，保证背景彻底透明。 */
-    private StackPane walkButton;
-    /** 开关图标视图，主题变深/变浅时直接换图。 */
-    private ImageView walkIconView;
-    /** 模型切换按钮（宽/窄）与披风勾选框，refresh 时按账号状态同步。 */
+
+    /** 账号卡：头像 + 昵称 + 副行。 */
+    private ImageView avatarView;
+    private Label accountName;
+    private Label accountSub;
+    /** 左栏模型 / 披风按钮。 */
     private Button wideBtn;
     private Button slimBtn;
-    private javafx.scene.control.CheckBox capeBox;
-    /** 披风本地选择/更换按钮；移除按钮仅在已绑披风时可见。 */
-    private Button capePickBtn;
-    private Button capeClearBtn;
+    private Button capeBtn;
+    /** 右栏标签胶囊：已拥有皮肤 / 官方皮肤。 */
+    private Button tabOwned;
+    private Button tabOfficial;
+    /** 右栏底部整宽保存按钮。 */
+    private Button saveBtn;
+    /** 当前是否处于「官方皮肤」标签（内置 Mojang 预设库）；false = 已拥有（本地 + 账号同步）。 */
+    private boolean officialOnly;
+
+    /** 一张内置官方预设皮肤：随 jar 打包，不依赖本地皮肤库。 */
+    private static final class BuiltinSkin {
+        final String name;
+        final String resource;
+        final boolean slim;
+        BuiltinSkin(String name, String resource, boolean slim) {
+            this.name = name;
+            this.resource = resource;
+            this.slim = slim;
+        }
+    }
+
+    /** Mojang 官方默认角色预设（取自客户端 jar 的 entity/player 纹理）。 */
+    private static final List<BuiltinSkin> BUILTIN = List.of(
+            new BuiltinSkin("Steve",   "/skins/builtin/steve.png",  false),
+            new BuiltinSkin("Alex",    "/skins/builtin/alex.png",   true),
+            new BuiltinSkin("Ari",      "/skins/builtin/ari.png",    true),
+            new BuiltinSkin("Efe",      "/skins/builtin/efe.png",    true),
+            new BuiltinSkin("Kai",      "/skins/builtin/kai.png",    false),
+            new BuiltinSkin("Makena",   "/skins/builtin/makena.png", true),
+            new BuiltinSkin("Noor",     "/skins/builtin/noor.png",   true),
+            new BuiltinSkin("Sunny",    "/skins/builtin/sunny.png",  true),
+            new BuiltinSkin("Zuri",     "/skins/builtin/zuri.png",   false)
+    );
+
     /** 皮肤站同步防重入：refresh() 末尾会触发同步，同步完成又调 refresh()，不拦住会无限循环。 */
     private boolean lsSyncing;
     /** 上次同步过的账号指纹（uuid|皮肤文件|披风文件），相同就不再发请求。 */
@@ -81,6 +124,7 @@ public class SkinsView {
     public SkinsView(LauncherApp app) {
         this.app = app;
         this.preview = new SkinCanvas(302.0, 300.0);
+        this.preview.setModelScale(0.80);
         // 预览可左右拖动旋转：披风在背后，正视角度只能看到一条边
         final double[] drag = new double[2];
         this.preview.setOnMousePressed(e -> {
@@ -89,8 +133,8 @@ public class SkinsView {
         });
         this.preview.setOnMouseDragged(e -> this.preview.setYaw(drag[1] + (e.getSceneX() - drag[0]) * 0.7));
         this.root.setPadding(new Insets(16.0));
-        this.root.setStyle("-fx-background-color:" + Ui.BG + ";");
-        this.root.getChildren().addAll(new Node[]{this.buildHeader(), this.buildBody()});
+        this.root.setStyle("-fx-background-color:" + OUTER_BG + ";");
+        this.root.getChildren().add((Node)this.buildBody());
         this.refresh();
     }
 
@@ -98,56 +142,45 @@ public class SkinsView {
         return this.root;
     }
 
-    /** 走动按钮不画任何底色块（要求完全融入背景），hover 反馈交给图标自身缩放。 */
-    private String styleWalkBtn(boolean on, boolean hover) {
-        return "-fx-background-color:transparent; -fx-background-radius:8; -fx-padding:2;";
-    }
-
-    /** 启动器三种背景（默认夜景/图片/透明）均为深色界面，走动按钮统一用白色线稿，保证深底可见。 */
-    private Image pickWalkIcon() {
-        Image ic = Ui.WALK_LIGHT;
-        return ic != null ? ic : Ui.WALK_DARK;
-    }
-
-    /** 主题变化后按需刷新按钮图标（界面重建前也会走一次，双重保险）。 */
-    private void syncWalkIcon() {
-        Image ic = this.pickWalkIcon();
-        if (ic != null && this.walkIconView != null) {
-            this.walkIconView.setImage(ic);
-        }
-    }
-
-    private Node buildHeader() {
-        Label title = new Label("皮肤库");
-        title.setStyle("-fx-text-fill:" + Ui.TEXT + "; -fx-font-size:18px; -fx-font-weight:bold;");
-        this.countLabel.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
-        Region spacer = new Region();
-        HBox.setHgrow((Node)spacer, (Priority)Priority.ALWAYS);
-        Button add = new Button("+ 添加皮肤");
-        add.setStyle("-fx-background-color:#3FA9F5; -fx-text-fill:white;-fx-background-radius:6; -fx-padding:6 14; -fx-cursor:hand; -fx-font-weight:bold;");
-        add.setOnAction(e -> this.importSkin());
-        // 皮肤站直达：点一下开 LittleSkin 官网，去那边挑皮肤/披风、改宽窄模型
-        javafx.scene.control.Hyperlink lsHome = new javafx.scene.control.Hyperlink("LittleSkin 官网");
-        lsHome.setStyle("-fx-text-fill:#0DB9C6; -fx-font-size:12px; -fx-cursor:hand;");
-        lsHome.setOnAction(e -> openUrl(com.jwh.launcher.auth.LittleSkinAuth.HOME));
-        javafx.scene.control.Hyperlink lsReg = new javafx.scene.control.Hyperlink("注册");
-        lsReg.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px; -fx-cursor:hand;");
-        lsReg.setOnAction(e -> openUrl(com.jwh.launcher.auth.LittleSkinAuth.REGISTER));
-        HBox row = new HBox(10.0, new Node[]{title, this.countLabel, spacer, lsHome, lsReg, add});
-        row.setAlignment(Pos.CENTER_LEFT);
-        return row;
-    }
-
     private Node buildBody() {
-        HBox row = new HBox(14.0, new Node[]{this.buildPreviewCard(), this.buildGridCard()});
-        HBox.setHgrow((Node)((Node)row.getChildren().get(1)), (Priority)Priority.ALWAYS);
+        VBox leftCol = new VBox(14.0, new Node[]{this.buildAccountCard(), this.buildPreviewCard(), this.buildModelRow(), this.buildCapeRow()});
+        leftCol.setPrefWidth(330.0);
+        leftCol.setMinWidth(300.0);
+        Node gridCard = this.buildGridCard();
+        VBox.setVgrow(gridCard, (Priority)Priority.ALWAYS);
+        HBox row = new HBox(16.0, new Node[]{leftCol, gridCard});
+        HBox.setHgrow((Node)row.getChildren().get(1), (Priority)Priority.ALWAYS);
         VBox.setVgrow((Node)row, (Priority)Priority.ALWAYS);
         return row;
     }
 
+    /** 左栏顶部账号卡：头像 + 昵称 + 副行。 */
+    private Node buildAccountCard() {
+        Image av = null;
+        try (InputStream in = getClass().getResourceAsStream("/avatar_steve.png")) {
+            if (in != null) av = new Image(in);
+        } catch (Exception ignored) {
+        }
+        if (av == null) av = Ui.GRASS_BLOCK;
+        this.avatarView = new ImageView(av);
+        this.avatarView.setFitWidth(48.0);
+        this.avatarView.setFitHeight(48.0);
+        this.avatarView.setPreserveRatio(true);
+        this.accountName = new Label("未登录");
+        this.accountName.setStyle("-fx-text-fill:" + TEXT_PRIMARY + "; -fx-font-size:16px; -fx-font-weight:bold;");
+        this.accountSub = new Label("点击登录账户");
+        this.accountSub.setStyle("-fx-text-fill:" + TEXT_SUB + "; -fx-font-size:12px;");
+        VBox textCol = new VBox(4.0, new Node[]{this.accountName, this.accountSub});
+        textCol.setAlignment(Pos.CENTER_LEFT);
+        HBox card = new HBox(12.0, new Node[]{this.avatarView, textCol});
+        card.setAlignment(Pos.CENTER_LEFT);
+        card.setPadding(new Insets(14.0));
+        card.setStyle("-fx-background-color:transparent; -fx-cursor:hand;");
+        card.setOnMouseClicked(e -> openUrl(com.jwh.launcher.auth.LittleSkinAuth.HOME));
+        return card;
+    }
+
     private Node buildPreviewCard() {
-        Label head = new Label("预览");
-        head.setStyle("-fx-text-fill:" + Ui.TEXT + "; -fx-font-size:14px; -fx-font-weight:bold;");
         this.preview.setOnMousePressed(e -> {
             this.dragging = true;
             this.dragStartX = e.getSceneX();
@@ -184,9 +217,8 @@ public class SkinsView {
         this.nameTag.setStyle("-fx-background-color:rgba(20,24,30,0.78); -fx-text-fill:white;-fx-font-size:12px; -fx-padding:3 10; -fx-background-radius:10;");
         this.nameTag.setVisible(false);
         StackPane stage = new StackPane(new Node[]{this.preview});
-        // 透明舞台：人物直接浮在启动器面板上，跟随主题背景色
+        // 透明舞台：人物直接浮在卡片上
         stage.setStyle("-fx-background-color:transparent;");
-        // Canvas 不可伸缩，尺寸必须自己跟随舞台，预览才会随窗口自适应高度（否则整页撑高会挤掉顶栏）
         stage.setMinHeight(120.0);
         stage.widthProperty().addListener((o, ov, nv) -> {
             double w = nv.doubleValue();
@@ -202,122 +234,80 @@ public class SkinsView {
                 this.preview.render();
             }
         });
-        // 名字胶囊放在「预览」标题行右侧，避免遮住人物头部
-        Region headSpacer = new Region();
-        HBox.setHgrow((Node)headSpacer, (Priority)Priority.ALWAYS);
-        // 「走动」开关：放在预览框最左边，只有线稿小人、背景全透明；提示文字挂在 tooltip 上
-        ImageView walkIcon = new ImageView(this.pickWalkIcon());
-        walkIcon.setFitWidth(28.0);
-        walkIcon.setFitHeight(28.0);
-        walkIcon.setPreserveRatio(true);
-        this.walkIconView = walkIcon;
-        // 用 StackPane 而不是 Button：Button 自带 Modena 的灰蓝底/描边，怎么清都会留色块
-        StackPane walkBtn = new StackPane((Node)walkIcon);
-        walkBtn.setPadding(new Insets(2.0));
-        walkBtn.setCursor(Cursor.HAND);
-        walkBtn.setPickOnBounds(true);
-        // 悬停提示用界面内自绘气泡（Tooltip 是独立弹窗，无法随主窗口一起截图校验）
-        Label walkTip = new Label("走动");
-        walkTip.setStyle("-fx-background-color:rgba(30,35,44,0.92); -fx-text-fill:white;"
-                + " -fx-font-size:11px; -fx-padding:2 6; -fx-background-radius:5;");
-        walkTip.setTranslateX(-3.0);
-        walkTip.setMouseTransparent(true);
-        walkTip.setVisible(false);
-        walkBtn.setStyle(this.styleWalkBtn(false, false));
-        walkBtn.setOnMouseEntered(e -> {
-            walkBtn.setStyle(this.styleWalkBtn(this.preview.isWalking(), true));
-            walkIcon.setScaleX(1.10);
-            walkIcon.setScaleY(1.10);
-            walkTip.setVisible(true);
-        });
-        walkBtn.setOnMouseExited(e -> {
-            walkBtn.setStyle(this.styleWalkBtn(this.preview.isWalking(), false));
-            walkIcon.setScaleX(1.0);
-            walkIcon.setScaleY(1.0);
-            walkTip.setVisible(false);
-        });
-        walkBtn.setOnMouseClicked(e -> {
-            boolean on = !this.preview.isWalking();
-            this.preview.setWalking(on);
-            this.preview.render();
-            walkBtn.setStyle(this.styleWalkBtn(on, walkBtn.isHover()));
-        });
-        this.walkButton = walkBtn;
-        // 用一层铺满舞台但不吃鼠标的 HBox 把按钮钉在左边缘（StackPane.setAlignment 在此布局下不生效）
-        HBox walkHolder = new HBox(0.0, new Node[]{walkBtn, walkTip});
-        walkHolder.setAlignment(Pos.CENTER_LEFT);
-        walkHolder.setPickOnBounds(false);
-        walkHolder.setFillHeight(false);   // 不拉伸按钮高度，否则透明背景会被拉成一整条竖条
-        walkHolder.setPadding(new Insets(0.0, 0.0, 0.0, 10.0));
-        walkBtn.setMaxHeight(Region.USE_PREF_SIZE);
-        walkBtn.setMaxWidth(Region.USE_PREF_SIZE);
-        walkBtn.setTranslateY(-34.0);
-        stage.getChildren().add((Node)walkHolder);
-        HBox headRow = new HBox(8.0, new Node[]{head, headSpacer, this.nameTag});
-        headRow.setAlignment(Pos.CENTER_LEFT);
+        Label dragTip = new Label("拖拽以旋转");
+        dragTip.setStyle("-fx-text-fill:" + TEXT_SUB + "; -fx-font-size:11px;");
+        StackPane.setAlignment((Node)dragTip, (Pos)Pos.BOTTOM_CENTER);
+        StackPane.setMargin((Node)dragTip, (Insets)new Insets(0.0, 0.0, 8.0, 0.0));
+        stage.getChildren().add((Node)dragTip);
         VBox.setVgrow((Node)stage, (Priority)Priority.ALWAYS);
         this.tipLabel.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:11px;");
         this.tipLabel.setWrapText(true);
         this.tipLabel.setText("");
         this.tipLabel.setVisible(false);
         this.tipLabel.setManaged(false);
-        this.useBtn.setMaxWidth(Double.MAX_VALUE);
-        this.useBtn.setStyle("-fx-background-color:#3FA9F5; -fx-text-fill:white;-fx-background-radius:6; -fx-padding:7 12; -fx-font-weight:bold; -fx-cursor:hand;");
-        this.useBtn.setOnAction(e -> this.applySelected());
-        this.delBtn.setStyle("-fx-background-color:transparent; -fx-text-fill:" + Ui.TEXT_DIM + ";-fx-background-radius:6; -fx-padding:7 10; -fx-cursor:hand;");
-        this.delBtn.setOnAction(e -> this.deleteSelected());
-        HBox actions = new HBox(8.0, new Node[]{this.useBtn, this.delBtn});
-        HBox.setHgrow((Node)this.useBtn, (Priority)Priority.ALWAYS);
-        VBox card = new VBox(10.0, new Node[]{headRow, stage, this.buildModelBar(), this.tipLabel, actions});
+        VBox card = new VBox(10.0, new Node[]{stage});
         card.setPadding(new Insets(14.0));
-        card.setPrefWidth(330.0);
-        card.setMinWidth(300.0);
-        card.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:12;");
+        card.setStyle("-fx-background-color:" + CARD_BG + "; -fx-background-radius:12;");
+        VBox.setVgrow((Node)card, (Priority)Priority.ALWAYS);
         return card;
     }
 
-    /**
-     * 预览下方的「模型 + 披风」控制条：
-     * 宽/窄手臂可直接改 3D 模型（皮肤站那边也按这个显示），披风勾选后画出背后的披风。
-     */
-    private Node buildModelBar() {
-        Label tag = new Label("模型");
-        tag.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
-
+    /** 左栏第一行：宽手臂 / 细手臂。 */
+    private Node buildModelRow() {
         this.wideBtn = new Button("宽手臂");
         this.slimBtn = new Button("细手臂");
         for (Button b : new Button[]{this.wideBtn, this.slimBtn}) {
-            b.setStyle(modelBtnStyle(false));
+            b.setStyle(this.modelBtnStyle(false));
             b.setCursor(Cursor.HAND);
+            b.setMaxWidth(Double.MAX_VALUE);
+            b.setPrefHeight(40.0);
         }
         this.wideBtn.setOnAction(e -> this.setSlim(false));
         this.slimBtn.setOnAction(e -> this.setSlim(true));
+        HBox row = new HBox(10.0, new Node[]{this.wideBtn, this.slimBtn});
+        HBox.setHgrow((Node)this.wideBtn, (Priority)Priority.ALWAYS);
+        HBox.setHgrow((Node)this.slimBtn, (Priority)Priority.ALWAYS);
+        return row;
+    }
 
-        this.capeBox = new javafx.scene.control.CheckBox("披风");
-        this.capeBox.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
-        this.capeBox.setOnAction(e -> this.toggleCape(this.capeBox.isSelected()));
-
-        this.capePickBtn = new Button("选择披风");
-        this.capePickBtn.setStyle(modelBtnStyle(false));
-        this.capePickBtn.setCursor(Cursor.HAND);
-        this.capePickBtn.setOnAction(e -> this.importCape());
-        this.capeClearBtn = new Button("移除");
-        this.capeClearBtn.setStyle(modelBtnStyle(false));
-        this.capeClearBtn.setCursor(Cursor.HAND);
-        this.capeClearBtn.setOnAction(e -> this.removeCape());
-        this.capeClearBtn.setVisible(false);
-
-        Region sp = new Region();
-        HBox.setHgrow(sp, Priority.ALWAYS);
-        HBox bar = new HBox(6.0, new Node[]{tag, this.wideBtn, this.slimBtn, sp, this.capeBox, this.capePickBtn, this.capeClearBtn});
-        bar.setAlignment(Pos.CENTER_LEFT);
-        return bar;
+    /** 左栏第二行：披风（约 2/3）+ 删除皮肤（约 1/3）。 */
+    private Node buildCapeRow() {
+        this.capeBtn = new Button("披风（无）");
+        this.capeBtn.setCursor(Cursor.HAND);
+        this.capeBtn.setPrefHeight(40.0);
+        this.capeBtn.setStyle(this.ghostBtnStyle());
+        this.capeBtn.setOnAction(e -> this.importCape());
+        // 右键移除披风（左键更换）
+        this.capeBtn.setOnMouseClicked(e -> {
+            if (e.isSecondaryButtonDown()) {
+                this.removeCape();
+            }
+        });
+        this.delBtn.setCursor(Cursor.HAND);
+        this.delBtn.setPrefHeight(40.0);
+        this.delBtn.setPrefWidth(110.0);
+        this.delBtn.setMaxWidth(110.0);
+        this.delBtn.setStyle("-fx-background-color:#B8467C; -fx-text-fill:white; -fx-background-radius:10; -fx-padding:7 12; -fx-font-size:13px;");
+        this.delBtn.setOnAction(e -> this.deleteSelected());
+        HBox row = new HBox(10.0, new Node[]{this.capeBtn, this.delBtn});
+        HBox.setHgrow((Node)this.capeBtn, (Priority)Priority.ALWAYS);
+        return row;
     }
 
     private String modelBtnStyle(boolean on) {
         return on
-                ? "-fx-background-color:#3FA9F5; -fx-text-fill:white; -fx-background-radius:5; -fx-padding:3 9; -fx-font-size:12px;"
-                : "-fx-background-color:" + Ui.BG_LIGHT + "; -fx-text-fill:" + Ui.TEXT + "; -fx-background-radius:5; -fx-padding:3 9; -fx-font-size:12px;";
+                ? "-fx-background-color:" + PINK + "; -fx-text-fill:white; -fx-background-radius:10; -fx-padding:7 12; -fx-font-size:13px; -fx-font-weight:bold;"
+                : "-fx-background-color:transparent; -fx-text-fill:" + TEXT_PRIMARY + "; -fx-background-radius:10; -fx-padding:7 12; -fx-font-size:13px; -fx-border-color:rgba(255,255,255,0.22); -fx-border-radius:10;";
+    }
+
+    private String ghostBtnStyle() {
+        return "-fx-background-color:transparent; -fx-text-fill:" + TEXT_PRIMARY + "; -fx-background-radius:10; -fx-padding:7 12; -fx-font-size:13px; -fx-border-color:rgba(255,255,255,0.22); -fx-border-radius:10;";
+    }
+
+    private String tabStyle(boolean on) {
+        return on
+                ? "-fx-background-color:" + PINK + "; -fx-text-fill:white; -fx-background-radius:8; -fx-padding:6 14; -fx-font-size:12px; -fx-font-weight:bold;"
+                : "-fx-background-color:" + CARD_BG + "; -fx-text-fill:" + TEXT_SUB + "; -fx-background-radius:8; -fx-padding:6 14; -fx-font-size:12px; -fx-border-color:" + BORDER + "; -fx-border-radius:8;";
     }
 
     /** 切换宽/窄模型：立即重绘预览，并把选择写回账号（下次启动沿用）。 */
@@ -337,27 +327,6 @@ public class SkinsView {
         if (this.wideBtn == null || this.slimBtn == null) return;
         this.wideBtn.setStyle(this.modelBtnStyle(!slim));
         this.slimBtn.setStyle(this.modelBtnStyle(slim));
-    }
-
-    /** 披风开关：勾上就把账号名下的披风文件画出来，取消则移除。没绑披风时点勾直接进入本地导入。 */
-    private void toggleCape(boolean on) {
-        LauncherConfig.Account acc = this.currentAccount();
-        if (on) {
-            Path cape = this.capePath(acc);
-            if (cape == null) {
-                this.capeBox.setSelected(false);
-                this.importCape();
-                return;
-            }
-            if (!this.preview.setCape(cape)) {
-                this.capeBox.setSelected(false);
-                this.setTip("这张披风图不是标准尺寸（需要 64×32 或 64×64）。");
-                return;
-            }
-        } else {
-            this.preview.clearCape();
-        }
-        this.preview.render();
     }
 
     /** 当前账号的披风文件路径；没有就返回 null。 */
@@ -454,83 +423,169 @@ public class SkinsView {
         this.grid.setPrefWrapLength(520.0);
         this.scroll = new ScrollPane((Node)this.grid);
         this.scroll.setFitToWidth(true);
+        this.scroll.getStyleClass().add("jwh-skins-scroll");
         this.scroll.setStyle("-fx-background-color:transparent; -fx-background-insets:0; -fx-padding:0; -fx-border-color:transparent;");
         VBox.setVgrow((Node)this.scroll, (Priority)Priority.ALWAYS);
-        VBox card = new VBox(8.0, new Node[]{this.scroll});
-        card.setPadding(new Insets(12.0));
-        card.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:12;");
+
+        // 顶部标签行：已拥有皮肤 / 官方皮肤
+        this.tabOwned = new Button("已拥有皮肤");
+        this.tabOfficial = new Button("官方皮肤");
+        this.tabOwned.setCursor(Cursor.HAND);
+        this.tabOfficial.setCursor(Cursor.HAND);
+        this.tabOwned.setOnAction(e -> this.switchTab(false));
+        this.tabOfficial.setOnAction(e -> this.switchTab(true));
+
+        Region spacer = new Region();
+        HBox.setHgrow((Node)spacer, (Priority)Priority.ALWAYS);
+        Hyperlink lsHome = new Hyperlink("LittleSkin官网");
+        lsHome.setStyle("-fx-text-fill:" + TEXT_SUB + "; -fx-font-size:12px; -fx-cursor:hand;");
+        lsHome.setOnAction(e -> openUrl(com.jwh.launcher.auth.LittleSkinAuth.HOME));
+        Button addBtn = new Button("+ 添加皮肤");
+        addBtn.setCursor(Cursor.HAND);
+        addBtn.setStyle("-fx-background-color:transparent; -fx-text-fill:" + TEXT_PRIMARY + "; -fx-background-radius:8; -fx-padding:6 14; -fx-font-size:12px; -fx-border-color:rgba(255,255,255,0.22); -fx-border-radius:8;");
+        addBtn.setOnAction(e -> this.importSkin());
+        HBox topRow = new HBox(10.0, new Node[]{this.tabOwned, this.tabOfficial, spacer, lsHome, addBtn});
+        topRow.setAlignment(Pos.CENTER_LEFT);
+
+        this.saveBtn = new Button("保存设置");
+        this.saveBtn.setMaxWidth(Double.MAX_VALUE);
+        this.saveBtn.setPrefHeight(44.0);
+        this.saveBtn.setCursor(Cursor.HAND);
+        this.saveBtn.setStyle("-fx-background-color:" + PINK + "; -fx-text-fill:white; -fx-background-radius:10; -fx-padding:10 14; -fx-font-size:15px; -fx-font-weight:bold;");
+        this.saveBtn.setOnAction(e -> this.applySelected());
+
+        VBox card = new VBox(12.0, new Node[]{topRow, this.scroll, this.saveBtn});
+        card.setPadding(new Insets(14.0));
+        card.setStyle("-fx-background-color:" + CARD_BG + "; -fx-background-radius:14;");
         return card;
     }
 
+    private void switchTab(boolean official) {
+        this.officialOnly = official;
+        this.refresh();
+    }
+
+    /** 首格虚线「拖放添加皮肤」占位卡。 */
+    private Node buildDropCard() {
+        Label plus = new Label("+");
+        plus.setStyle("-fx-text-fill:" + TEXT_SUB + "; -fx-font-size:26px; -fx-font-weight:bold;");
+        Label text = new Label("拖放添加皮肤");
+        text.setStyle("-fx-text-fill:" + TEXT_SUB + "; -fx-font-size:12px;");
+        VBox box = new VBox(6.0, new Node[]{plus, text});
+        box.setAlignment(Pos.CENTER);
+        box.setPrefWidth(134.0);
+        box.setPrefHeight(228.0);
+        box.setMaxHeight(228.0);
+        box.setStyle("-fx-background-color:transparent; -fx-background-radius:10; -fx-border-color:" + BORDER + "; -fx-border-radius:10; -fx-border-style:dashed; -fx-border-width:1;");
+        box.setCursor(Cursor.HAND);
+        box.setOnMouseClicked(e -> this.importSkin());
+        return box;
+    }
+
     private Node buildCard(Path p, boolean isCurrent) {
+        Image img = null;
+        try (InputStream in2 = Files.newInputStream(p, new OpenOption[0])) {
+            img = new Image(in2);
+        } catch (Exception ignored) {
+        }
+        boolean premium = p.getFileName().toString().startsWith("正版-");
+        return this.buildCardCore(img, p.getFileName().toString(), premium ? "正版 · 随账号生效" : null, p, isCurrent);
+    }
+
+    /** 内置官方预设卡：贴图来自 jar 资源，点击时才落地到本地库，再复用文件链路预览/选用。 */
+    private Node buildBuiltinCard(BuiltinSkin b, boolean isCurrent) {
+        Image img = null;
+        try (InputStream in = getClass().getResourceAsStream(b.resource)) {
+            if (in != null) img = new Image(in);
+        } catch (Exception ignored) {
+        }
+        VBox box = (VBox) this.buildCardCore(img, b.name, null, null, isCurrent);
+        box.setOnMouseClicked(e -> {
+            Path bp = this.materializeBuiltin(b);
+            if (bp != null) {
+                this.previewSkin(bp);
+                // 内置角色按官方臂型预览，不沿用账号上次的宽/细设置
+                this.preview.setSlimOverride(b.slim);
+                this.preview.render();
+                this.syncModelButtons(b.slim);
+                if (e.getClickCount() >= 2) {
+                    this.applySkin(bp);
+                }
+            }
+        });
+        return box;
+    }
+
+    /** 把内置资源复制一份到本地皮肤库（已存在则复用），返回可走文件链路的路径。 */
+    private Path materializeBuiltin(BuiltinSkin b) {
+        try {
+            Path lib = this.libraryDir();
+            Files.createDirectories(lib, new FileAttribute[0]);
+            Path dst = lib.resolve("官方预设-" + b.name + ".png");
+            if (!Files.exists(dst, new LinkOption[0])) {
+                try (InputStream in = getClass().getResourceAsStream(b.resource)) {
+                    if (in != null) {
+                        Files.copy(in, dst, StandardCopyOption.REPLACE_EXISTING);
+                        dst.toFile().setWritable(true);
+                    }
+                }
+            }
+            return dst;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Node buildCardCore(Image img, String displayName, String tagText, Path userData, boolean isCurrent) {
         SkinCanvas thumb = new SkinCanvas(118.0, 152.0);
-        try (InputStream in2 = Files.newInputStream(p, new OpenOption[0]);){
-            thumb.setSkin(new Image(in2));
-        }
-        catch (Exception in2) {
-            // empty catch block
-        }
+        if (img != null) thumb.setSkin(img);
         thumb.render();
         Label badge = new Label("使用中");
-        badge.setStyle("-fx-background-color:#3FA9F5; -fx-text-fill:white;-fx-font-size:10px; -fx-padding:1 6; -fx-background-radius:8;");
+        badge.setStyle("-fx-background-color:" + PINK + "; -fx-text-fill:white;-fx-font-size:10px; -fx-padding:1 6; -fx-background-radius:8;");
         badge.setVisible(isCurrent);
         badge.setManaged(isCurrent);
         StackPane pic = new StackPane(new Node[]{thumb, badge});
-        // 缩略图同样透明，和卡片面板融在一起
         pic.setStyle("-fx-background-color:transparent;");
+        pic.setMinHeight(152.0);
+        pic.setPrefHeight(152.0);
+        pic.setMaxHeight(152.0);
+        pic.setAlignment(Pos.CENTER);
         StackPane.setAlignment((Node)badge, (Pos)Pos.TOP_RIGHT);
         StackPane.setMargin((Node)badge, (Insets)new Insets(6.0));
-        Label name = new Label(p.getFileName().toString());
-        name.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:11px;");
+        Label name = new Label(displayName);
+        name.setStyle("-fx-text-fill:" + TEXT_SUB + "; -fx-font-size:11px;");
         name.setMaxWidth(118.0);
+        name.setPrefHeight(30.0);
         name.setWrapText(true);
-        Button use = new Button("使用");
-        use.setStyle("-fx-background-color:#3FA9F5; -fx-text-fill:white;-fx-font-size:11px; -fx-padding:2 8; -fx-background-radius:5; -fx-cursor:hand;");
-        use.setOnAction(e -> {
-            e.consume();
-            this.applySkin(p);
-        });
-        Button remove = new Button("删除");
-        remove.setStyle("-fx-background-color:rgba(0,0,0,0.06); -fx-text-fill:" + Ui.TEXT_DIM + ";-fx-font-size:11px; -fx-padding:2 8; -fx-background-radius:5; -fx-cursor:hand;");
-        remove.setOnAction(e -> {
-            e.consume();
-            this.deleteSkin(p);
-        });
-        // 自动同步来的正版皮肤由 Mojang 账号管理，不提供本地「使用/删除」
-        boolean premium = p.getFileName().toString().startsWith("正版-");
-        HBox hoverBar;
-        if (premium) {
-            Button tag = new Button("正版皮肤 · 随账号生效");
-            tag.setDisable(true);
-            tag.setStyle("-fx-background-color:rgba(0,0,0,0.06); -fx-text-fill:" + Ui.TEXT_DIM + ";-fx-font-size:11px; -fx-padding:2 8; -fx-background-radius:5;");
-            hoverBar = new HBox(4.0, new Node[]{tag});
-        } else {
-            hoverBar = new HBox(4.0, new Node[]{use, remove});
+        Label tag = null;
+        if (tagText != null) {
+            tag = new Label(tagText);
+            tag.setStyle("-fx-text-fill:" + TEXT_SUB + "; -fx-font-size:10px;");
+            tag.setPrefHeight(14.0);
         }
-        hoverBar.setAlignment(Pos.CENTER);
-        hoverBar.setVisible(false);
-        boolean[] isSelected = new boolean[]{isCurrent};
-        VBox box = new VBox(6.0, new Node[]{pic, name, hoverBar});
+        VBox box = new VBox(6.0, new Node[]{pic, name});
+        if (tag != null) box.getChildren().add((Node)tag);
         box.setPadding(new Insets(8.0));
         box.setPrefWidth(134.0);
+        // 两类卡片锁定等高：画布 152 + 两行文件名 30 + 标签行 14 + 间距/内边距，避免官方卡被文本撑高
+        box.setPrefHeight(228.0);
+        box.setMaxHeight(228.0);
         box.setStyle(this.borderStyle(isCurrent));
         box.setOnMouseEntered(e -> {
-            hoverBar.setVisible(true);
-            if (!isSelected[0]) {
-                box.setStyle(this.borderStyle(false, "#3FA9F555"));
+            if (!isCurrent) {
+                box.setStyle(this.borderStyle(false, PINK + "55"));
             }
         });
-        box.setOnMouseExited(e -> {
-            hoverBar.setVisible(false);
-            box.setStyle(this.borderStyle(isSelected[0]));
-        });
+        box.setOnMouseExited(e -> box.setStyle(this.borderStyle(isCurrent)));
         box.setOnMouseClicked(e -> {
-            this.previewSkin(p);
-            if (e.getClickCount() >= 2) {
-                this.applySkin(p);
+            if (userData != null) {
+                this.previewSkin(userData);
+                if (e.getClickCount() >= 2) {
+                    this.applySkin(userData);
+                }
             }
         });
-        box.setUserData((Object)p);
+        box.setUserData((Object)userData);
         this.boxes.add(box);
         return box;
     }
@@ -540,33 +595,69 @@ public class SkinsView {
     }
 
     private String borderStyle(boolean current, String hoverColor) {
-        String color = current ? "#3FA9F5" : hoverColor;
-        return "-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:10;-fx-border-color:" + color + "; -fx-border-radius:10;-fx-border-width:" + (current ? 2 : 1) + ";";
+        String color = current ? PINK : hoverColor;
+        return "-fx-background-color:" + CHIP_BG + "; -fx-background-radius:10;-fx-border-color:" + color + "; -fx-border-radius:10;-fx-border-width:" + (current ? 2 : 1) + ";";
     }
 
     public void refresh() {
-        this.syncWalkIcon();
-        Path keep;
         this.boxes.clear();
         this.grid.getChildren().clear();
         LauncherConfig.Account acc = this.currentAccount();
         boolean offline = acc != null && acc.type == LauncherConfig.Account.Type.OFFLINE;
-        List<Path> skins = this.listLibrary();
-        this.countLabel.setText("共 " + skins.size() + " 张皮肤");
-        if (skins.isEmpty()) {
-            Label empty = new Label("皮肤库还是空的，点右上角「+ 添加皮肤」导入一张 PNG（支持 64×64 或 64×32）。");
+        List<Path> skins;
+        List<BuiltinSkin> builtins;
+        if (this.officialOnly) {
+            // 官方皮肤：内置 Mojang 预设角色库（随 jar 打包）
+            skins = List.of();
+            builtins = BUILTIN;
+        } else {
+            // 已拥有：本地导入 + 正版账号同步 + 皮肤站同步，全部展示在这一标签
+            skins = this.listLibrary();
+            builtins = List.of();
+        }
+        int total = this.officialOnly ? builtins.size() : skins.size();
+        this.countLabel.setText("共 " + total + " 张皮肤");
+
+        // 账号卡回显
+        if (this.accountName != null) {
+            if (acc == null) {
+                this.accountName.setText("未登录");
+                this.accountSub.setText("点击登录账户");
+            } else {
+                this.accountName.setText(acc.displayName == null || acc.displayName.isBlank() ? "未命名" : acc.displayName);
+                this.accountSub.setText(this.typeLabel(acc));
+            }
+        }
+        // 标签胶囊样式
+        if (this.tabOwned != null) {
+            this.tabOwned.setStyle(this.tabStyle(!this.officialOnly));
+            this.tabOfficial.setStyle(this.tabStyle(this.officialOnly));
+        }
+
+        String curHash = this.currentSkinHash(acc);
+        if (this.officialOnly) {
+            for (BuiltinSkin b : builtins) {
+                this.grid.getChildren().add(this.buildBuiltinCard(b, false));
+            }
+        } else if (skins.isEmpty()) {
+            this.grid.getChildren().add(this.buildDropCard());
+            Label empty = new Label("皮肤库还是空的，点「+ 添加皮肤」导入一张 PNG（支持 64×64 或 64×32）。");
             empty.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
             empty.setWrapText(true);
             this.grid.getChildren().add(empty);
         } else {
-            String curHash = this.currentSkinHash(acc);
+            this.grid.getChildren().add(this.buildDropCard());
             for (Path p : skins) {
                 this.grid.getChildren().add(this.buildCard(p, curHash != null && curHash.equals(SkinsView.sha1Hex(p))));
             }
         }
-        Path path = keep = this.selected != null && Files.isRegularFile(this.selected, new LinkOption[0]) ? this.selected : null;
-        if (keep == null && !skins.isEmpty()) {
-            keep = skins.get(0);
+        Path keep = this.selected != null && Files.isRegularFile(this.selected, new LinkOption[0]) ? this.selected : null;
+        if (keep == null) {
+            if (!skins.isEmpty()) {
+                keep = skins.get(0);
+            } else if (!builtins.isEmpty()) {
+                keep = this.materializeBuiltin(builtins.get(0));
+            }
         }
         this.selected = keep;
         this.previewSkin(this.selected);
@@ -583,26 +674,27 @@ public class SkinsView {
             tip = "未登录时将使用离线身份保存本地皮肤，选图即生效。";
         }
         this.setTip(tip);
-        // 模型按钮 / 披风勾选按当前账号状态回显（切账号后不会停在上一个账号的选择）
+        // 模型按钮 / 披风按当前账号状态回显（切账号后不会停在上一个账号的选择）
         boolean slimNow = acc != null && acc.skinSlim != null ? acc.skinSlim : this.preview.isSlim();
         this.syncModelButtons(slimNow);
-        if (this.capeBox != null) {
+        if (this.capeBtn != null) {
             boolean hasCape = this.capePath(acc) != null;
-            this.capeBox.setText(hasCape ? "披风" : "披风（无）");
-            this.capeBox.setSelected(hasCape);
-            this.capeBox.setVisible(true);
-            if (this.capePickBtn != null) {
-                this.capePickBtn.setText(hasCape ? "更换披风" : "选择披风");
-            }
-            if (this.capeClearBtn != null) {
-                this.capeClearBtn.setVisible(hasCape);
-            }
+            this.capeBtn.setText(hasCape ? "披风 · 点击更换（右键移除）" : "披风（无）");
             if (!hasCape) {
                 this.preview.clearCape();
             }
         }
         // 正版账号的皮肤来自 Mojang，后台拉取一次，完成后自动刷新列表
         this.syncPremiumSkin();
+    }
+
+    private String typeLabel(LauncherConfig.Account acc) {
+        if (acc == null) return "点击登录账户";
+        switch (acc.type) {
+            case MICROSOFT: return "正版账号";
+            case LITTLESKIN: return "LittleSkin 账号";
+            default: return "离线账号";
+        }
     }
 
     /** 提示条按内容自动显隐，空文案时不占高度。 */
@@ -616,10 +708,12 @@ public class SkinsView {
     private void updateActionState() {
         boolean has = this.selected != null && Files.isRegularFile(this.selected, new LinkOption[0]);
         boolean isCurrent = has && this.isSelectedCurrent(this.selected);
-        this.useBtn.setDisable(!has || isCurrent);
-        this.useBtn.setText(isCurrent ? "当前使用中" : "使用这个皮肤");
-        this.useBtn.setStyle((String)(isCurrent ? "-fx-background-color:" + Ui.BG_LIGHT + "; -fx-text-fill:" + Ui.TEXT_DIM + ";-fx-background-radius:6; -fx-padding:7 12;" : "-fx-background-color:#3FA9F5; -fx-text-fill:white;-fx-background-radius:6; -fx-padding:7 12; -fx-font-weight:bold; -fx-cursor:hand;"));
-        this.delBtn.setDisable(!has);
+        boolean premium = has && this.selected.getFileName().toString().startsWith("正版-");
+        if (this.saveBtn != null) {
+            this.saveBtn.setDisable(!has || isCurrent);
+            this.saveBtn.setText(isCurrent ? "当前使用中" : "保存设置");
+        }
+        this.delBtn.setDisable(!has || premium);
     }
 
     private boolean isSelectedCurrent(Path p) {
@@ -660,7 +754,7 @@ public class SkinsView {
         }
         for (VBox box : this.boxes) {
             boolean cur = p.equals(box.getUserData());
-            box.setStyle(this.borderStyle(cur, "#3FA9F555"));
+            box.setStyle(this.borderStyle(cur, PINK + "55"));
         }
         this.updateActionState();
     }
@@ -914,7 +1008,7 @@ public class SkinsView {
     static String sha1Hex(Path p) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-1");
-            try (InputStream in = Files.newInputStream(p, new OpenOption[0]);){
+            try (InputStream in = Files.newInputStream(p, new LinkOption[0]);){
                 int n;
                 byte[] buf = new byte[8192];
                 while ((n = in.read(buf)) > 0) {

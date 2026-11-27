@@ -292,7 +292,7 @@ public final class Http {
 
     /**
      * 两路并发抢答：镜像与官方同时拉取同一小文本（版本 JSON / 版本清单等元数据），
-     * 先成功返回者胜出并立即取消另一路（PCL/HMCL 思路：慢源不再阻塞进度）。
+     * 先成功返回者胜出并立即取消另一路（通用思路：慢源不再阻塞进度）。
      * 单路失败自动用另一路结果；两路都失败抛最后异常。仅用于小体积元数据，不用于大文件。
      */
     public static String getTextRace(String urlA, String urlB) throws IOException, InterruptedException {

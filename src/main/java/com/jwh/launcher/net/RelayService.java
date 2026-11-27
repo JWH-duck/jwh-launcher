@@ -125,7 +125,9 @@ public final class RelayService {
         if (l != null) {
             try {
                 l.accept(s);
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                System.err.println("[RELAY] 状态回调渲染异常：" + e.getMessage());
+                e.printStackTrace();
             }
         }
     }

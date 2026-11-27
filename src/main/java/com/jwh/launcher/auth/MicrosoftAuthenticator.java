@@ -27,9 +27,9 @@ public class MicrosoftAuthenticator {
 
     /** Minecraft 官方 Launcher 的公共 client_id（仅授权码网页流可用；微软对此通道风控较严）。 */
     public static final String PUBLIC_CLIENT_ID = "00000000402b5328";
-    /** PCL 内置的微软登录应用 ID（Plain Craft Launcher 的公共客户端，免注册设备码流；对齐 PCL ModLaunch.vb）。 */
-    public static final String PCL_CLIENT_ID = "fe72edc2-3a6f-4280-90e8-e2beb64ce7e1";
-    public static final String DEFAULT_CLIENT_ID = PCL_CLIENT_ID;
+    /** 内置的微软登录应用 ID（公共客户端，免注册设备码流）。 */
+    public static final String BUILTIN_CLIENT_ID = "fe72edc2-3a6f-4280-90e8-e2beb64ce7e1";
+    public static final String DEFAULT_CLIENT_ID = BUILTIN_CLIENT_ID;
     public static String CLIENT_ID = DEFAULT_CLIENT_ID;
     /** 授权码流程的回调地址（微软桌面应用公共回调，固定值）。 */
     public static final String DEFAULT_REDIRECT_URI = "https://login.live.com/oauth20_desktop.srf";
@@ -86,28 +86,28 @@ public class MicrosoftAuthenticator {
             java.net.URI loc = com.jwh.launcher.config.LauncherConfig.class.getProtectionDomain()
                     .getCodeSource().getLocation().toURI();
             java.nio.file.Path jar = java.nio.file.Path.of(loc);
-            if (!java.nio.file.Files.isRegularFile(jar)) return PCL_CLIENT_ID;
+            if (!java.nio.file.Files.isRegularFile(jar)) return BUILTIN_CLIENT_ID;
             java.nio.file.Path json = jar.resolveSibling("microsoft-auth.json");
-            if (!java.nio.file.Files.isRegularFile(json)) return PCL_CLIENT_ID;
+            if (!java.nio.file.Files.isRegularFile(json)) return BUILTIN_CLIENT_ID;
             String clientId = new org.json.JSONObject(
                     java.nio.file.Files.readString(json, java.nio.charset.StandardCharsets.UTF_8))
                     .optString("clientId").trim();
-            return isValidClientId(clientId) ? clientId : PCL_CLIENT_ID;
+            return isValidClientId(clientId) ? clientId : BUILTIN_CLIENT_ID;
         } catch (Exception e) {
-            return PCL_CLIENT_ID;
+            return BUILTIN_CLIENT_ID;
         }
     }
 
-    /** 保证 CLIENT_ID 有效：无效时重置为 PCL 内置应用 ID 并返回。 */
+    /** 保证 CLIENT_ID 有效：无效时重置为内置应用 ID 并返回。 */
     private static String requireClientId() {
         if (!isValidClientId(CLIENT_ID)) {
-            CLIENT_ID = PCL_CLIENT_ID;
-            return PCL_CLIENT_ID;
+            CLIENT_ID = BUILTIN_CLIENT_ID;
+            return BUILTIN_CLIENT_ID;
         }
         return CLIENT_ID;
     }
 
-    // ---- 端点（与 PCL ModLaunch.vb 一致） ----
+    // ---- 端点定义 ----
     // 租户说明：Minecraft 官方公共 client_id 注册在 common 租户（multi-tenant），
     // 自注册「仅个人账户」的 Azure 应用则需 consumers 租户。
     // 因此默认走 common，失败且提示「应用未找到（700016）」时自动回退 consumers。
@@ -145,12 +145,12 @@ public class MicrosoftAuthenticator {
      */
     public static JSONObject requestDeviceCode() throws Exception {
         if (!hasOwnClientId()) {
-            throw new IllegalStateException("设备码登录支持 PCL 内置应用与自建 Entra 应用。当前使用的是 Minecraft 官方应用 ID，"
+            throw new IllegalStateException("设备码登录支持内置登录应用与自建 Entra 应用。当前使用的是 Minecraft 官方应用 ID，"
                     + "请使用默认内置登录应用后重试。");
         }
         String lastErr = null;
-        // PCL 内置应用固定 consumers 租户（对齐 PCL ModLaunch.vb）；其它自建应用先 common 再回退 consumers
-        String[] tenants = PCL_CLIENT_ID.equalsIgnoreCase(CLIENT_ID) ? new String[]{"consumers"} : TENANTS;
+        // 内置应用固定 consumers 租户；其它自建应用先 common 再回退 consumers
+        String[] tenants = BUILTIN_CLIENT_ID.equalsIgnoreCase(CLIENT_ID) ? new String[]{"consumers"} : TENANTS;
         for (String tenant : tenants) {
             Http.HttpResult r = Http.postFormRaw(
                     "https://login.microsoftonline.com/" + tenant + "/oauth2/v2.0/devicecode", Map.of(
@@ -207,7 +207,7 @@ public class MicrosoftAuthenticator {
                 status = r.status;
                 body = r.body;
             } catch (Exception e) {
-                // 网络层临时错误：按 interval 重试，连续 5 次失败才报错（对齐 PCL 的失败重试策略）
+                // 网络层临时错误：按 interval 重试，连续 5 次失败才报错
                 failCount++;
                 if (failCount >= 5) {
                     throw new IOException("登录轮询失败：" + e.getMessage());
@@ -220,7 +220,7 @@ public class MicrosoftAuthenticator {
             if (status == 200) {
                 return new JSONObject(body);
             }
-            // 400：按错误语义分支（对齐 PCL MyMsgLogin.xaml.vb 的 WorkThread）
+            // 400：按错误语义分支处理
             String lower = body == null ? "" : body.toLowerCase();
             if (lower.contains("authorization_pending")) {
                 // 用户还没完成授权，继续轮询
@@ -262,9 +262,9 @@ public class MicrosoftAuthenticator {
      * 换码/刷新 token 端点（对齐 104）：官方 client_id 走 login.live.com v1；自注册 Entra 应用走 consumers v2。
      */
     public static String tokenUrl() {
-        // PCL 内置应用与官方 ID 都用 login.live.com v1 端点刷新（对齐 PCL ModLaunch.vb 的 MsLoginStep1Refresh）；
+        // 内置应用与官方 ID 都用 login.live.com v1 端点刷新；
         // 仅「其它自建 Entra 应用」走 consumers v2 token 端点。
-        return PCL_CLIENT_ID.equalsIgnoreCase(CLIENT_ID) ? LIVE_TOKEN_URL
+        return BUILTIN_CLIENT_ID.equalsIgnoreCase(CLIENT_ID) ? LIVE_TOKEN_URL
                 : hasOwnClientId() ? TOKEN_URL : LIVE_TOKEN_URL;
     }
 
@@ -431,12 +431,12 @@ public class MicrosoftAuthenticator {
         }
         String body;
         try {
-            // PCL 内置应用：照抄 PCL ModLaunch.vb MsLoginStep1Refresh（LIVE_TOKEN_URL + refresh_token grant，不传 redirect）
+            // 内置应用：LIVE_TOKEN_URL + refresh_token grant，不传 redirect
             java.util.LinkedHashMap<String, String> form = new java.util.LinkedHashMap<>();
             form.put("client_id", CLIENT_ID);
             form.put("refresh_token", refreshToken);
             form.put("grant_type", "refresh_token");
-            if (!PCL_CLIENT_ID.equalsIgnoreCase(CLIENT_ID)) {
+            if (!BUILTIN_CLIENT_ID.equalsIgnoreCase(CLIENT_ID)) {
                 form.put(tokenRedirectParam(), REDIRECT_URI);
             }
             form.put("scope", tokenScope());
@@ -464,7 +464,7 @@ public class MicrosoftAuthenticator {
     }
 
     /**
-     * 步骤 2-6：微软 access_token → Minecraft profile 完整链路（对齐 PCL MsLoginStep2~6）。
+     * 步骤 2-6：微软 access_token → Minecraft profile 完整链路。
      * @param msAccessToken 微软 access_token
      * @return 含 accessToken / uuid / name / expiresAt(ms) / profileJson 的 JSONObject
      */
@@ -484,7 +484,7 @@ public class MicrosoftAuthenticator {
             throw new IllegalStateException("Xbox Live 认证失败，请重试或检查账号");
         }
 
-        // 步骤 3：XSTS authorize → XSTS Token + UHS（请求体与 PCL 一致：UserTokens 只放 XBL Token）
+        // 步骤 3：XSTS authorize → XSTS Token + UHS（UserTokens 只放 XBL Token）
         JSONObject xstsReq = new JSONObject()
                 .put("Properties", new JSONObject()
                         .put("SandboxId", "RETAIL")
@@ -544,7 +544,7 @@ public class MicrosoftAuthenticator {
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
-            // 所有权接口临时失败不阻断登录（对齐 PCL：仅在明确返回空 items 时判定未购买）
+            // 所有权接口临时失败不阻断登录（仅在明确返回空 items 时判定未购买）
         }
 
         // 步骤 6：Minecraft profile → UUID + 用户名 + 完整档案 JSON
@@ -569,7 +569,7 @@ public class MicrosoftAuthenticator {
         return out;
     }
 
-    /** 尝试将 XSTS 错误码转为用户可读信息（覆盖 PCL 常见错误码）。 */
+    /** 尝试将 XSTS 错误码转为用户可读信息（覆盖常见错误码）。 */
     public static String describeXstsError(JSONObject errBody) {
         if (errBody == null) return "未知错误";
         long err = errBody.optLong("XErr", 0);

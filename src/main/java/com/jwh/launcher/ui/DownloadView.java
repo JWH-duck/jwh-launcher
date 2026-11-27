@@ -19,8 +19,11 @@ import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import org.json.JSONObject;
@@ -61,32 +64,38 @@ public class DownloadView {
     private ModrinthTab modTab;
     private ModrinthTab shaderPackTab;
     private ModrinthTab rpTab;
-    private ShaderTab shaderTab;
+    private ModrinthTab loaderTab;
     private ModpackTab modpackTab;
     /** 版本下载页的加载器融合选择（无（仅原版）/ Fabric / Quilt / Forge / NeoForge）。 */
     private ComboBox<String> loaderPlatform;
     private ComboBox<String> loaderVersionBox;
+    /** 版本列表关键词搜索框（按版本 id 过滤）。 */
+    private TextField searchBox;
+    /** 标题栏与内容标签行之间的近黑分隔色块（对标设计稿）。 */
+    private final Region topDivider = new Region();
 
     public DownloadView(LauncherApp app) {
         this.app = app;
 
         TabPane tabs = new TabPane();
+        tabs.getStyleClass().add("jwh-download-tabs");
         tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
-        tabs.setStyle("-fx-background-color:" + Ui.BG_LIGHT + ";");
+        tabs.setStyle("-fx-background-color:transparent;");
 
         Tab versionTab = buildVersionTab();
         modTab = new ModrinthTab(app, ModrinthTab.Type.MOD, sink, this::attachControl, this::detachControl);
         shaderPackTab = new ModrinthTab(app, ModrinthTab.Type.SHADER, sink, this::attachControl, this::detachControl);
         rpTab = new ModrinthTab(app, ModrinthTab.Type.RESOURCEPACK, sink, this::attachControl, this::detachControl);
-        shaderTab = new ShaderTab(app, sink, this::attachControl, this::detachControl);
+        loaderTab = new ModrinthTab(app, ModrinthTab.Type.LOADER, sink, this::attachControl, this::detachControl);
         modpackTab = new ModpackTab(app, sink, this::attachControl, this::detachControl);
         Tab modTabT = modTab.asTab();
         Tab shaderPackTabT = shaderPackTab.asTab();
-        Tab shaderTabT = shaderTab.asTab();
+        Tab loaderTabT = loaderTab.asTab();
         Tab rpTabT = rpTab.asTab();
         Tab modpackTabT = modpackTab.asTab();
 
-        tabs.getTabs().addAll(versionTab, modTabT, shaderTabT, shaderPackTabT, rpTabT, modpackTabT);
+        tabs.getTabs().addAll(versionTab, modTabT, loaderTabT, shaderPackTabT, rpTabT, modpackTabT);
+        tabs.getSelectionModel().select(modpackTabT); // TEMP-SHADER-SELECT
 
         // Tab 切换动效：被选中的 Tab 内容从右侧滑入 + 淡入，与整页切换手感一致
         tabs.getSelectionModel().selectedItemProperty().addListener((obs, oldT, newT) -> {
@@ -99,17 +108,21 @@ public class DownloadView {
         VBox.setVgrow(tabs, Priority.ALWAYS);
         // 内窗口圆角：面板与下方垫层同为 BG_LIGHT，弧线外露出的是垫层(同色)而非窗口底色，
         // 因此圆角四角无白三角/白边；圆角轮廓由深色边框线勾勒。
-        page.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-background-radius:20; -fx-background-insets:0;"
-                + "-fx-border-radius:20; -fx-border-color:" + Ui.BORDER + ";");
-        page.setPadding(new Insets(12));
+        page.setStyle("-fx-background-color:#261c30; -fx-background-radius:20; -fx-background-insets:0;"
+                + "-fx-border-radius:20; -fx-border-color:transparent;");
+        page.setPadding(new Insets(0, 0, 12, 0));
+        topDivider.setStyle("-fx-background-color:#261c30; -fx-background-insets:0;");
+        topDivider.setPrefHeight(8);
         page.getChildren().add(tabs);
     }
 
     public Node root() {
         // 垫层：与面板同色铺满整个下载中心区域，让圆角弧线外的角落显示同色而非窗口底色
         StackPane wrap = new StackPane();
-        wrap.setStyle("-fx-background-color:" + Ui.BG_LIGHT + ";");
-        wrap.getChildren().add(page);
+        wrap.setStyle("-fx-background-color:#261c30;");
+        VBox box = new VBox(0);
+        box.getChildren().addAll(topDivider, page);
+        wrap.getChildren().add(box);
         return wrap;
     }
 
@@ -118,7 +131,7 @@ public class DownloadView {
         if (modTab != null) modTab.refreshVersions();
         if (shaderPackTab != null) shaderPackTab.refreshVersions();
         if (rpTab != null) rpTab.refreshVersions();
-        if (shaderTab != null) shaderTab.refreshVersions();
+        if (loaderTab != null) loaderTab.refreshVersions();
         if (manifest == null) {
             Ui.async(() -> {
                 manifest = VersionManifest.fetch(app.config.minecraftPath().resolve("launcher_cache_manifest.json"),
@@ -172,19 +185,59 @@ public class DownloadView {
 
     private Tab buildVersionTab() {
         VBox box = new VBox(10);
-        box.setPadding(new Insets(12));
+        box.setPadding(new Insets(12, 0, 12, 0));
 
+        // ===== 类型筛选胶囊（正式版 / 快照 / 愚人节 / 远古版 / 全部） =====
         ComboBox<String> filter = new ComboBox<>();
         filter.getItems().addAll("全部", "正式版", "快照", "愚人节", "远古版");
-        // 默认选中「正式版」（HMCL 同款分类：正式版 / 快照 / 愚人节 / 远古版）
+        // 默认选中「正式版」（通用分类：正式版 / 快照 / 愚人节 / 远古版）
         filter.getSelectionModel().select(1);
-        filter.setStyle("-fx-background-color:" + Ui.PANEL + ";");
+        filter.getStyleClass().add("jwh-capsule");
+        filter.getStyleClass().add("jwh-capsule-plain");
+
+        // ===== 加载器融合选择：平台胶囊 + 版本胶囊 =====
+        loaderPlatform = new ComboBox<>();
+        loaderPlatform.getItems().addAll("无（仅原版）", "Fabric", "Quilt", "Forge", "NeoForge");
+        loaderPlatform.setPromptText("选择加载器");
+        loaderPlatform.getStyleClass().add("jwh-capsule");
+        loaderPlatform.getStyleClass().add("jwh-capsule-plain");
+
+        loaderVersionBox = new ComboBox<>();
+        loaderVersionBox.getItems().addAll("默认最新稳定版");
+        loaderVersionBox.getSelectionModel().selectFirst();
+        loaderVersionBox.getStyleClass().add("jwh-capsule");
+        loaderVersionBox.getStyleClass().add("jwh-capsule-plain");
+        loaderVersionBox.setPromptText("加载器版本（默认最新稳定版）");
+        loaderVersionBox.setDisable(true); // 未选择游戏版本前不可用
+
+        // ===== 关键词搜索框（按版本 id 过滤），前置放大镜 =====
+        searchBox = new TextField();
+        searchBox.setPromptText("点击搜索...");
+        searchBox.getStyleClass().add("jwh-search");
+        javafx.scene.shape.Circle lens = new javafx.scene.shape.Circle(9, 9, 5.5);
+        lens.setFill(null);
+        lens.setStroke(javafx.scene.paint.Color.rgb(255, 255, 255, 0.75));
+        lens.setStrokeWidth(1.4);
+        javafx.scene.shape.Line searchHandle = new javafx.scene.shape.Line(12.6, 12.6, 16.0, 16.0);
+        searchHandle.setStroke(javafx.scene.paint.Color.rgb(255, 255, 255, 0.75));
+        searchHandle.setStrokeWidth(1.4);
+        javafx.scene.layout.Pane searchGlyph = new javafx.scene.layout.Pane(lens, searchHandle);
+        searchGlyph.setPrefSize(18, 18);
+        searchGlyph.setMinSize(18, 18);
+        searchGlyph.setMaxSize(18, 18);
+        HBox searchWrap = new HBox(8, searchGlyph, searchBox);
+        searchWrap.setAlignment(Pos.CENTER_LEFT);
+        searchWrap.getStyleClass().add("jwh-search-wrap");
+        HBox.setHgrow(searchBox, Priority.ALWAYS);
+        HBox.setHgrow(searchWrap, Priority.ALWAYS);
 
         ListView<VersionManifest.Version> list = new ListView<>();
-        list.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-control-inner-background:" + Ui.PANEL + ";");
+        list.getStyleClass().add("jwh-dl-list");
+        list.setStyle("-fx-background-color:transparent; -fx-control-inner-background:transparent; -fx-border-color:transparent; -fx-border-width:0; -fx-background-radius:0; -fx-border-radius:0; -fx-padding:4 0;");
         list.setCellFactory(c -> new ListCell<>() {
             private final javafx.scene.image.ImageView icon = new javafx.scene.image.ImageView();
             private final Label idLabel = new Label();
+            private final Label typeLabel = new Label();
             private final Label metaLabel = new Label();
             private final HBox row = new HBox(10);
             private final VBox info = new VBox(2);
@@ -194,21 +247,23 @@ public class DownloadView {
                 icon.setFitHeight(32);
                 icon.setPreserveRatio(true);
                 icon.setImage(Ui.GRASS_BLOCK);
-                idLabel.setStyle("-fx-text-fill:" + Ui.TEXT + "; -fx-font-size:15px; -fx-font-weight:bold;");
-                metaLabel.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
+                idLabel.setStyle("-fx-text-fill:#ffffff; -fx-font-size:15px; -fx-font-weight:bold;");
+                typeLabel.setStyle("-fx-text-fill:#d982c2; -fx-font-size:15px; -fx-font-weight:bold;");
+                metaLabel.setStyle("-fx-text-fill:rgba(255,255,255,0.5); -fx-font-size:12px;");
+                HBox titleLine = new HBox(6, idLabel, typeLabel);
+                titleLine.setAlignment(Pos.CENTER_LEFT);
                 HBox spacer = new HBox();
-                // 只做弹性占位，避免 MAX_VALUE 宽度把版本名挤成省略号“…”
                 HBox.setHgrow(spacer, Priority.ALWAYS);
-                info.getChildren().addAll(idLabel, metaLabel);
+                info.getChildren().addAll(titleLine, metaLabel);
                 row.setAlignment(Pos.CENTER_LEFT);
                 row.getChildren().addAll(icon, info, spacer);
             }
 
             private void applyRowStyle(boolean selected) {
-                // 选中：浅蓝高亮（与 style.css tab 选中同色 rgba(63,169,245,0.18)），未选中透明
+                // 深色行：未选中透明 + 底部分隔细线；选中浅白半透明条
                 setStyle(selected
-                        ? "-fx-background-color:rgba(63,169,245,0.18); -fx-background-radius:8;"
-                        : "-fx-background-color:transparent; -fx-background-radius:8;");
+                        ? "-fx-background-color:rgba(255,255,255,0.06); -fx-background-radius:8; -fx-padding:12 14;"
+                        : "-fx-background-color:transparent; -fx-border-color:rgba(255,255,255,0.08); -fx-border-width:0 0 1 0; -fx-padding:12 14;");
             }
 
             @Override
@@ -225,9 +280,10 @@ public class DownloadView {
                     setText(null);
                 } else {
                     boolean installed = app.localVersions.exists(v.id());
-                    idLabel.setText(v.id() + "   [" + v.typeLabel() + "]" + (installed ? "  ✓已安装" : ""));
+                    idLabel.setText(v.id() + (installed ? "  ✓已安装" : ""));
+                    typeLabel.setText("[" + v.typeLabel() + "]");
                     metaLabel.setText(fmtTime(v.releaseTime()));
-                    // 类型图标：愚人节→粘液块、远古版→工作台、其余→草方块（HMCL 同款效果）
+                    // 类型图标：愚人节→粘液块、远古版→工作台、其余→草方块（通用效果）
                     icon.setImage(iconFor(v));
                     setGraphic(row);
                     setText(null);
@@ -242,19 +298,16 @@ public class DownloadView {
             }
         });
 
-        Button refreshBtn = new Button("刷新清单");
-        refreshBtn.setStyle("-fx-text-fill:" + Ui.TEXT + ";");
-        refreshBtn.setOnAction(e -> Ui.async(() -> {
-            manifest = VersionManifest.fetch(app.config.minecraftPath().resolve("launcher_cache_manifest.json"),
-                    app.config.manifestUrl());
-            return null;
-        }, ok -> {
-            applyFilter(filter, list);
-            app.setStatus("清单已刷新");
-        }, err -> Ui.error("拉取失败", err)));
+        // 空状态提示（稿：当前暂无游戏版本）
+        Label emptyLabel = new Label("当前暂无游戏版本");
+        emptyLabel.setStyle("-fx-text-fill:rgba(255,255,255,0.85); -fx-font-size:18px;");
+        emptyLabel.setVisible(false);
+        emptyLabel.setMouseTransparent(true);
+        list.getItems().addListener((javafx.collections.ListChangeListener<VersionManifest.Version>) ch ->
+                emptyLabel.setVisible(list.getItems().isEmpty()));
 
         Button installBtn = new Button("下载");
-        installBtn.setStyle("-fx-background-color:" + Ui.ACCENT + "; -fx-text-fill:white; -fx-font-weight:bold;");
+        installBtn.getStyleClass().add("jwh-fab");
         installBtn.setOnAction(e -> {
             VersionManifest.Version v = list.getSelectionModel().getSelectedItem();
             if (v == null) {
@@ -265,34 +318,7 @@ public class DownloadView {
         });
 
         filter.valueProperty().addListener((obs, o, n) -> applyFilter(filter, list));
-        refreshBtn.fire();
-
-        // ===== 加载器融合选择：选版本 + 选加载器 + 一次下载 =====
-        loaderPlatform = new ComboBox<>();
-        loaderPlatform.getItems().addAll("无（仅原版）", "Fabric", "Quilt", "Forge", "NeoForge");
-        loaderPlatform.getSelectionModel().selectFirst();
-        loaderPlatform.setStyle("-fx-background-color:" + Ui.PANEL + ";");
-
-        loaderVersionBox = new ComboBox<>();
-        loaderVersionBox.getItems().addAll("默认最新稳定版");
-        loaderVersionBox.getSelectionModel().selectFirst();
-        loaderVersionBox.setStyle("-fx-background-color:" + Ui.PANEL + ";");
-        loaderVersionBox.setPromptText("加载器版本（默认最新稳定版）");
-        loaderVersionBox.setDisable(true); // 未选择游戏版本前不可用
-
-        Button refreshLoaderBtn = new Button("刷新加载器列表");
-        refreshLoaderBtn.setStyle("-fx-text-fill:" + Ui.TEXT + ";");
-        refreshLoaderBtn.setOnAction(e -> {
-            VersionManifest.Version v = list.getSelectionModel().getSelectedItem();
-            String plat = loaderPlatform.getSelectionModel().getSelectedItem();
-            if (v == null || plat == null || "无（仅原版）".equals(plat)) {
-                Ui.error("未选择", "请先在上方列表选择游戏版本，并选择加载器平台。");
-                return;
-            }
-            loaderVersionBox.setDisable(false);
-            fillLoaderVersions(v.id(), plat, loaderVersionBox, true);
-            app.setStatus("正在刷新 " + plat + " 加载器版本列表…");
-        });
+        searchBox.textProperty().addListener((obs, o, n) -> applyFilter(filter, list));
 
         // 选中某个版本后，若已选加载器则自动查询该版本可用的加载器版本列表
         list.getSelectionModel().selectedItemProperty().addListener((obs, o, n) -> {
@@ -319,28 +345,40 @@ public class DownloadView {
             }
         });
 
-        HBox row = new HBox(8);
-        row.setAlignment(Pos.CENTER_LEFT);
-        row.getChildren().addAll(new Label("类型："), filter, refreshBtn);
-        Label spacer = new Label();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        row.getChildren().addAll(spacer, installBtn);
+        // ===== 深紫筛选条：类型 / 加载器平台 / 加载器版本 + 弹性占位 + 搜索框 =====
+        HBox filterBar = new HBox(10);
+        filterBar.setAlignment(Pos.CENTER_LEFT);
+        filterBar.setStyle("-fx-background-color:#261c30; -fx-background-radius:0; -fx-padding:10 12;");
+        HBox barSpacer = new HBox();
+        HBox.setHgrow(barSpacer, Priority.ALWAYS);
+        filterBar.getChildren().addAll(filter, loaderPlatform, loaderVersionBox, barSpacer, searchWrap);
 
-        HBox loaderRow = new HBox(8);
-        loaderRow.setAlignment(Pos.CENTER_LEFT);
-        HBox.setHgrow(loaderVersionBox, Priority.ALWAYS);
-        loaderRow.getChildren().addAll(new Label("加载器："), loaderPlatform, new Label("版本："), loaderVersionBox, refreshLoaderBtn);
+        // ===== 列表区：空态居中 + 右下绿色圆形下载钮 =====
+        StackPane listWrap = new StackPane(list, emptyLabel, installBtn);
+        StackPane.setAlignment(installBtn, Pos.BOTTOM_RIGHT);
+        StackPane.setMargin(installBtn, new Insets(0, 16, 16, 0));
+        VBox.setVgrow(listWrap, Priority.ALWAYS);
+        VBox.setMargin(listWrap, new Insets(0, 12, 0, 12));
 
-        VBox.setVgrow(list, Priority.ALWAYS);
-        box.getChildren().addAll(row, loaderRow, list);
+        box.getChildren().addAll(filterBar, listWrap);
+        Ui.async(() -> {
+            manifest = VersionManifest.fetch(app.config.minecraftPath().resolve("launcher_cache_manifest.json"),
+                    app.config.manifestUrl());
+            return null;
+        }, ok -> {
+            applyFilter(filter, list);
+            app.setStatus("清单已刷新");
+        }, err -> Ui.error("拉取失败", err));
         return new Tab("游戏版本", box);
     }
 
     private void applyFilter(ComboBox<String> filter, ListView<VersionManifest.Version> list) {
         if (manifest == null) return;
         String f = filter.getSelectionModel().getSelectedItem();
+        String q = searchBox == null ? "" : searchBox.getText().trim().toLowerCase();
         List<VersionManifest.Version> out = new ArrayList<>();
         for (VersionManifest.Version v : manifest.versions) {
+            if (!q.isEmpty() && !v.id().toLowerCase().contains(q)) continue;
             if ("全部".equals(f)) out.add(v);
             else if ("正式版".equals(f) && v.isRelease()) out.add(v);
             else if ("快照".equals(f) && v.isSnapshot()) out.add(v);
@@ -559,7 +597,7 @@ public class DownloadView {
                 Platform.runLater(() -> {
                     loaderBox.getItems().setAll("默认最新稳定版");
                     loaderBox.getSelectionModel().selectFirst();
-                    app.setStatus("加载器版本列表获取失败：" + e.getMessage() + "（可点「刷新加载器列表」重试，或稍后重试）");
+                    app.setStatus("加载器版本列表获取失败：" + e.getMessage() + "（可稍后重试）");
                 });
             }
         }, "loader-version-query");

@@ -158,6 +158,8 @@ public class Updater {
 
     private final Path appDir;
     private final String currentVersion;
+    /** 更新通道：stable=正式版（latest） / beta=测试版（beta）。 */
+    private final String channel;
     /** 进度文本回调（可空）；后台线程上报，由界面层切回 FX 线程刷新。 */
     private Consumer<String> progressSink;
     /** 进度数值回调（可空）：0..1 的确定进度，由界面层切回 FX 线程刷新进度条。 */
@@ -178,8 +180,13 @@ public class Updater {
     private int layerDone;
 
     public Updater(Path appDir, String currentVersion) {
+        this(appDir, currentVersion, "stable");
+    }
+
+    public Updater(Path appDir, String currentVersion, String channel) {
         this.appDir = appDir;
         this.currentVersion = currentVersion;
+        this.channel = "beta".equalsIgnoreCase(channel) ? "beta" : "stable";
     }
 
     /** 注入进度文本回调，返回本对象便于链式调用。 */
@@ -288,7 +295,7 @@ public class Updater {
         return String.format("%.1f MB", bytes / 1024.0 / 1024.0);
     }
 
-    /** 当前生效的更新源地址：update-url.txt 优先，其次内置默认。 */
+    /** 当前生效的更新源地址：update-url.txt 优先，其次内置默认（按通道 stable/beta 分流）。 */
     public String manifestUrl() {
         Path f = appDir.resolve("update-url.txt");
         if (Files.isRegularFile(f)) {
@@ -299,6 +306,9 @@ public class Updater {
                 }
             } catch (IOException ignored) {
             }
+        }
+        if ("beta".equals(channel)) {
+            return DEFAULT_MANIFEST_URL.replace("/download/latest/", "/download/beta/");
         }
         return DEFAULT_MANIFEST_URL;
     }

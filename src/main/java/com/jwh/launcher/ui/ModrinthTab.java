@@ -30,19 +30,23 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
- * 通用 Modrinth 搜索下载 Tab（Mod / 材质包 复用；光影包由 ShaderTab 组合）。
+ * 通用 Modrinth 搜索下载 Tab（Mod / 光影加载器 / 光影包 / 材质包 复用）。
  */
 public class ModrinthTab {
 
     public enum Type {
         MOD("mod", "Mod 模组", true),
+        LOADER("mod", "光影加载器", true),
         SHADER("shader", "光影包", false),
         RESOURCEPACK("resourcepack", "材质包", false);
 
@@ -70,9 +74,10 @@ public class ModrinthTab {
     private final TextField searchBox = new TextField();
     private final ComboBox<String> versionBox = new ComboBox<>();
     private final ComboBox<String> sourceBox = new ComboBox<>();
+    private final ComboBox<String> sortBox = new ComboBox<>();
     private final Button searchBtn = new Button("搜索");
     private final Button refreshBtn = new Button("刷新");
-    /** 版本下拉的 id → 显示名（HMCL 式：加载器实例显示 "1.21.1 · NeoForge 21.1.265"）。 */
+    /** 版本下拉的 id → 显示名（通用：加载器实例显示 "1.21.1 · NeoForge 21.1.265"）。 */
     private final java.util.Map<String, String> displayNames = new java.util.HashMap<>();
     /** 版本下拉的 id → 纯游戏版本（neoforge-21.1.265 → 1.21.1，供搜索 API 使用）。 */
     private final java.util.Map<String, String> mcBases = new java.util.HashMap<>();
@@ -124,11 +129,13 @@ public class ModrinthTab {
     }
 
     public Tab asTab() {
+        boolean modLike = gridLike();
         VBox box = new VBox(10);
         box.setPadding(new Insets(12));
 
-        // 目标版本（本地已装实例，HMCL 式：加载器实例显示合并名，被继承的原版隐藏）
-        versionBox.setPromptText("安装到的版本（必选）");
+        // 目标版本（本地已装实例，通用：加载器实例显示合并名，被继承的原版隐藏）
+        versionBox.setPromptText("目标安装版本（必选）");
+        versionBox.setPrefWidth(280);
         versionBox.setCellFactory(c -> new ListCell<>() {
             @Override
             protected void updateItem(String id, boolean empty) {
@@ -145,20 +152,21 @@ public class ModrinthTab {
         });
 
         // 数据源
-        sourceBox.getItems().addAll("Modrinth（推荐）", "CurseForge");
+        sourceBox.getItems().addAll("Modrinth", "CurseForge");
         sourceBox.getSelectionModel().selectFirst();
-        sourceBox.setPrefWidth(120);
+        sourceBox.setPrefWidth(150);
         sourceBox.setOnAction(e -> {
             boolean cf = "CurseForge".equals(sourceBox.getValue());
             searchBox.setPromptText(cf ? "搜索模组/材质包（CurseForge）" : searchPrompt());
         });
 
         searchBox.setPromptText(searchPrompt());
-        searchBox.setPrefWidth(280);
         HBox.setHgrow(searchBox, Priority.ALWAYS);
 
-        searchBtn.setStyle("-fx-background-color:" + Ui.ACCENT + "; -fx-text-fill:white;");
-        refreshBtn.setStyle("-fx-text-fill:" + Ui.TEXT + ";");
+        // 排序下拉（仅 Mod 新样式使用）
+        sortBox.getItems().addAll("下载量·高到低", "下载量·低到高", "名称 A–Z");
+        sortBox.getSelectionModel().selectFirst();
+        sortBox.setPrefWidth(150);
 
         // 双列卡片网格：ScrollPane 内竖向滚动，横向不滚
         grid.setStyle("-fx-background-color:transparent;");
@@ -176,25 +184,60 @@ public class ModrinthTab {
         scroll.setStyle("-fx-background-color:transparent; -fx-background:" + Ui.PANEL + ";");
         VBox.setVgrow(scroll, Priority.ALWAYS);
 
-        // 顶部两行布局：第一行 数据源/目标版本（目标版本自带加载器类别，无需单独选加载器），
-        // 第二行 搜索框独占整行，避免小窗口下控件互相挤压导致版本名/搜索提示被截断。
-        HBox top = new HBox(8);
-        top.setAlignment(Pos.CENTER_LEFT);
-        top.getChildren().addAll(new Label("数据源："), sourceBox,
-                new Label("目标版本："), versionBox);
-        HBox.setHgrow(versionBox, Priority.ALWAYS);
-        HBox searchRow = new HBox(8);
-        searchRow.setAlignment(Pos.CENTER_LEFT);
-        searchRow.getChildren().addAll(searchBox, searchBtn, refreshBtn);
+        if (modLike) {
+            sourceBox.getStyleClass().addAll("jwh-capsule", "jwh-capsule-plain");
+            versionBox.getStyleClass().addAll("jwh-capsule", "jwh-capsule-plain");
+            sortBox.getStyleClass().addAll("jwh-capsule", "jwh-capsule-plain");
+            searchBox.getStyleClass().add("jwh-search");
 
-        searchBtn.setOnAction(e -> search());
-        searchBox.setOnAction(e -> search());
-        refreshBtn.setOnAction(e -> {
-            refreshVersions();
-            IconCache.resetFailures();   // 重置图标下载失败计数，重新尝试
-            search();
-        });
-        box.getChildren().addAll(top, searchRow, scroll);
+            // 搜索框：放大镜内嵌深色胶囊
+            javafx.scene.shape.Circle lens = new javafx.scene.shape.Circle(9, 9, 5.5);
+            lens.setFill(null);
+            lens.setStroke(javafx.scene.paint.Color.rgb(255, 255, 255, 0.75));
+            lens.setStrokeWidth(1.4);
+            javafx.scene.shape.Line handle = new javafx.scene.shape.Line(12.6, 12.6, 16.0, 16.0);
+            handle.setStroke(javafx.scene.paint.Color.rgb(255, 255, 255, 0.75));
+            handle.setStrokeWidth(1.4);
+            javafx.scene.layout.Pane glyph = new javafx.scene.layout.Pane(lens, handle);
+            glyph.setPrefSize(18, 18);
+            glyph.setMinSize(18, 18);
+            glyph.setMaxSize(18, 18);
+            HBox searchWrap = new HBox(8, glyph, searchBox);
+            searchWrap.setAlignment(Pos.CENTER_LEFT);
+            searchWrap.getStyleClass().add("jwh-search-wrap");
+            HBox.setHgrow(searchBox, Priority.ALWAYS);
+            HBox.setHgrow(searchWrap, Priority.ALWAYS);
+
+            HBox filterBar = new HBox(10);
+            filterBar.setAlignment(Pos.CENTER_LEFT);
+            filterBar.getChildren().addAll(sourceBox, versionBox, searchWrap, sortBox);
+            searchBox.setOnAction(e -> search());
+            sortBox.setOnAction(e -> { applySort(); rebuildGrid(); });
+            box.getChildren().addAll(filterBar, scroll);
+        } else {
+            searchBox.setStyle("-fx-prompt-text-fill:rgba(255,255,255,0.55);");
+            searchBtn.setStyle("-fx-background-color:" + Ui.ACCENT + "; -fx-text-fill:white;");
+            refreshBtn.setStyle("-fx-text-fill:" + Ui.TEXT + ";");
+
+            HBox top = new HBox(8);
+            top.setAlignment(Pos.CENTER_LEFT);
+            top.getChildren().addAll(new Label("数据源："), sourceBox,
+                    new Label("目标版本："), versionBox);
+            HBox.setHgrow(versionBox, Priority.ALWAYS);
+            HBox searchRow = new HBox(8);
+            searchRow.setAlignment(Pos.CENTER_LEFT);
+            searchRow.getChildren().addAll(searchBox, searchBtn, refreshBtn);
+
+            searchBtn.setOnAction(e -> search());
+            searchBox.setOnAction(e -> search());
+            refreshBtn.setOnAction(e -> {
+                refreshVersions();
+                IconCache.resetFailures();
+                search();
+            });
+            box.getChildren().addAll(top, searchRow, scroll);
+        }
+
         Tab tab = new Tab(type.label, box);
         // 进入下载界面第一时间自动加载热门列表，无需手动点搜索
         tab.selectedProperty().addListener((obs, was, now) -> {
@@ -219,6 +262,7 @@ public class ModrinthTab {
 
     /** 一张结果卡片：背景为固定尺寸的 StackPane（高度锁死，不被文案撑高），内部图标+信息叠放其上。两列等宽、统一固定高度。 */
     private StackPane cardNode(ModrinthApi.Hit h) {
+        if (gridLike()) return modCard(h);
         StackPane card = new StackPane();
         card.setPadding(new Insets(10));
         card.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:10; -fx-border-radius:10;"
@@ -239,7 +283,7 @@ public class ModrinthTab {
         iconView.setFitHeight(36);
         iconView.setPreserveRatio(true);
         iconView.setSmooth(true);
-        Label titleLabel = new Label(ModNames.display(h.slug(), h.title()));
+        Label titleLabel = new Label(isBuiltin(h) ? h.title() : ModNames.display(h.slug(), h.title()));
         titleLabel.setStyle("-fx-text-fill:" + Ui.TEXT + "; -fx-font-size:14px; -fx-font-weight:bold;");
         titleLabel.setMaxWidth(Double.MAX_VALUE);
         titleLabel.setMinHeight(20);
@@ -250,7 +294,7 @@ public class ModrinthTab {
         metaLabel.setMaxWidth(Double.MAX_VALUE);
         metaLabel.setMinHeight(16);
         metaLabel.setPrefHeight(16); // 元信息恒单行，高度锁死
-        Label descLabel = new Label(ModNames.desc(h.slug(), h.title(), h.description()));
+        Label descLabel = new Label(isBuiltin(h) ? h.description() : ModNames.desc(h.slug(), h.title(), h.description()));
         descLabel.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
         descLabel.setWrapText(true);
         descLabel.setMaxWidth(Double.MAX_VALUE);
@@ -286,8 +330,139 @@ public class ModrinthTab {
         return card;
     }
 
+    /** Mod 新样式卡片：深色底 + 图标 + 标题/描述 + 来源胶囊 + 右下下载量（不含作者/版本胶囊）。 */
+    private StackPane modCard(ModrinthApi.Hit h) {
+        StackPane card = new StackPane();
+        card.setPadding(new Insets(12));
+        String baseStyle = "-fx-background-color:#2f2538; -fx-background-radius:12; -fx-border-radius:12;"
+                + " -fx-border-color:rgba(255,255,255,0.08); -fx-border-width:1;";
+        card.setStyle(baseStyle);
+        card.setMinWidth(0);
+        card.setPrefWidth(0);
+        card.setMaxWidth(Double.MAX_VALUE);
+        int cardH = (type == Type.SHADER || type == Type.RESOURCEPACK) ? 150 : 104;
+        card.setMinHeight(cardH);
+        card.setPrefHeight(cardH);
+        card.setMaxHeight(cardH);
+        card.setAlignment(Pos.TOP_LEFT);
+        card.setCursor(Cursor.HAND);
+        card.setOnMouseClicked(e -> openDetailPage(h));
+        card.setOnMouseEntered(e -> card.setStyle(baseStyle.replace("rgba(255,255,255,0.08)", "#d982c2")));
+        card.setOnMouseExited(e -> card.setStyle(baseStyle));
+
+        boolean tall = type == Type.SHADER || type == Type.RESOURCEPACK;
+        int iconSize = tall ? 48 : 40;
+        ImageView iconView = new ImageView();
+        iconView.setFitWidth(iconSize);
+        iconView.setFitHeight(iconSize);
+        iconView.setPreserveRatio(true);
+        iconView.setSmooth(true);
+        Label titleLabel = new Label(isBuiltin(h) ? h.title() : ModNames.display(h.slug(), h.title()));
+        titleLabel.setStyle("-fx-text-fill:#ffffff; -fx-font-size:15px; -fx-font-weight:bold;");
+        titleLabel.setMaxWidth(Double.MAX_VALUE);
+        titleLabel.setMinHeight(22);
+        Label descLabel = new Label(isBuiltin(h) ? h.description() : ModNames.desc(h.slug(), h.title(), h.description()));
+        descLabel.setStyle("-fx-text-fill:#b9bfc7; -fx-font-size:12px;");
+        descLabel.setWrapText(true);
+        descLabel.setMaxWidth(Double.MAX_VALUE);
+        descLabel.setPrefHeight(34);
+        descLabel.setMaxHeight(34);
+
+        List<javafx.scene.Node> infoChildren = new ArrayList<>();
+        infoChildren.add(titleLabel);
+        if (tall && h.author() != null && !h.author().isBlank()) {
+            Label authorLabel = new Label("by " + h.author());
+            authorLabel.setStyle("-fx-text-fill:#b9bfc7; -fx-font-size:12px;");
+            authorLabel.setMaxWidth(Double.MAX_VALUE);
+            infoChildren.add(authorLabel);
+        }
+        infoChildren.add(descLabel);
+        VBox info = new VBox(6);
+        info.getChildren().addAll(infoChildren);
+        info.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(info, Priority.ALWAYS);
+
+        List<javafx.scene.Node> bottomChildren = new ArrayList<>();
+        String ver = tall ? versionTag(h) : null;
+        if (ver != null) {
+            Label versionTag = new Label(ver);
+            versionTag.setStyle("-fx-background-color:#2c2336; -fx-text-fill:#b9bfc7; -fx-font-size:11px;"
+                    + " -fx-background-radius:6; -fx-padding:3 8;");
+            bottomChildren.add(versionTag);
+        }
+        Label sourceTag = new Label(isBuiltin(h) ? "BMCLAPI" : sourceTagText());
+        sourceTag.setStyle("-fx-background-color:#2c2336; -fx-text-fill:#b9bfc7; -fx-font-size:11px;"
+                + " -fx-background-radius:6; -fx-padding:3 8;");
+        bottomChildren.add(sourceTag);
+        Region spacer = new Region();
+        Label dlLabel = new Label(isBuiltin(h) ? "独立版本" : formatDownloads(h.downloads()) + " 下载");
+        dlLabel.setStyle("-fx-text-fill:#b9bfc7; -fx-font-size:12px;");
+        bottomChildren.add(spacer);
+        bottomChildren.add(dlLabel);
+        HBox bottom = new HBox(10);
+        bottom.getChildren().addAll(bottomChildren);
+        bottom.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        VBox content = new VBox(10, new HBox(12, iconView, info), bottom);
+        content.setMaxWidth(Double.MAX_VALUE);
+        card.getChildren().add(content);
+
+        iconView.setImage(Ui.GRASS_BLOCK);
+        String icon = h.iconUrl();
+        if (icon != null && !icon.isBlank()) {
+            String currentIconUrl = icon;
+            Image cached = IconCache.cached(icon);
+            if (cached != null) {
+                iconView.setImage(cached);
+            } else {
+                IconCache.ensure(icon, img -> {
+                    if (icon.equals(currentIconUrl)) iconView.setImage(img);
+                });
+            }
+        }
+        return card;
+    }
+
+    private String sourceTagText() {
+        return "CurseForge".equals(sourceBox.getValue()) ? "CurseForge" : "Modrinth";
+    }
+
+    /** 按当前排序下拉重排本地结果（不重新请求接口）。 */
+    private void applySort() {
+        String s = sortBox.getValue();
+        Comparator<ModrinthApi.Hit> cmp;
+        if ("下载量·低到高".equals(s)) {
+            cmp = Comparator.comparingLong(ModrinthApi.Hit::downloads);
+        } else if ("名称 A–Z".equals(s)) {
+            cmp = Comparator.comparing(h -> h.title() == null ? "" : h.title().toLowerCase(Locale.ROOT));
+        } else {
+            cmp = Comparator.comparingLong(ModrinthApi.Hit::downloads).reversed();
+        }
+        items.sort(cmp);
+    }
+
+    /** 下载量格式化：1.2M / 3.4K，不足千显示原值。 */
+    private static String formatDownloads(long d) {
+        if (d >= 1_000_000) return String.format(Locale.US, "%.1fM", d / 1_000_000.0);
+        if (d >= 1_000) return String.format(Locale.US, "%.1fK", d / 1_000.0);
+        return String.valueOf(d);
+    }
+
+    /** 卡片版本胶囊：优先匹配当前所选 MC 版本，否则取列表末项（最新）。无版本信息返回 null。 */
+    private String versionTag(ModrinthApi.Hit h) {
+        if (h.versions() == null || h.versions().isEmpty()) return null;
+        String mc = selectedMc();
+        if (mc != null && !mc.isBlank()) {
+            for (String v : h.versions()) {
+                if (mc.equals(v)) return v;
+            }
+        }
+        return h.versions().get(h.versions().size() - 1);
+    }
+
     /**
-     * 刷新：填充本地可见实例下拉（HMCL 式）。
+     * 刷新：填充本地可见实例下拉。
      * 下拉显示合并名（如 "1.21.1 · NeoForge 21.1.265"），值为实例 id；
      * 搜索 API 用纯游戏版本（mcBase），下载落点用实例 id 目录。
      */
@@ -340,6 +515,41 @@ public class ModrinthTab {
         return null;
     }
 
+    /** Mod 与光影加载器同属装入 mods 目录、按加载器实例匹配的类型。 */
+    /** 内置 OptiFine 条目标记：不走 Modrinth 检索，经 BMCLAPI 镜像获取安装器。 */
+    private static final String OPTIFINE_ID = "builtin-optifine";
+
+    private static boolean isBuiltin(ModrinthApi.Hit h) {
+        return OPTIFINE_ID.equals(h.projectId());
+    }
+
+    /** 内置 OptiFine 静态条目（标题/描述写死，不来自搜索接口）。 */
+    private static ModrinthApi.Hit builtinOptifine() {
+        return new ModrinthApi.Hit(OPTIFINE_ID, OPTIFINE_ID, "OptiFine",
+                "传统光影优化模组，安装后为独立版本；经 BMCLAPI 镜像获取官方安装器。",
+                "", 0, List.of("optifine"), "", List.of());
+    }
+
+    /** 内置条目固定置顶（排序后再移回首项）。 */
+    private void pinBuiltin() {
+        for (int i = 0; i < items.size(); i++) {
+            if (OPTIFINE_ID.equals(items.get(i).projectId())) {
+                ModrinthApi.Hit b = items.remove(i);
+                items.add(0, b);
+                return;
+            }
+        }
+    }
+
+    private boolean modLike() {
+        return type == Type.MOD || type == Type.LOADER;
+    }
+
+    /** 走新深色双列卡片网格 + 单行筛选条的类型：Mod / 加载器 / 光影包 / 材质包。 */
+    private boolean gridLike() {
+        return type == Type.MOD || type == Type.LOADER || type == Type.SHADER || type == Type.RESOURCEPACK;
+    }
+
     /** 当前选中目标版本自带的加载器参数（纯原版 → null，即不限加载器）。 */
     private String selectedLoader() {
         String id = versionBox.getSelectionModel().getSelectedItem();
@@ -354,7 +564,10 @@ public class ModrinthTab {
     }
 
     private String searchPrompt() {
-        return type == Type.MOD ? "搜索模组，支持中英文：jei / sodium / 钠 / 小地图" : "搜索材质包，例如：XeKr / 原版高亮";
+        if (type == Type.MOD) return "搜索模组…";
+        if (type == Type.LOADER) return "搜索光影加载器…";
+        if (type == Type.SHADER) return "搜索光影包…";
+        return "搜索材质包…";
     }
 
     private void search() {
@@ -374,6 +587,8 @@ public class ModrinthTab {
             Platform.runLater(() -> {
                 items.clear();
                 items.addAll(merged);
+                applySort();
+                if (type == Type.LOADER) pinBuiltin();
                 rebuildGrid();
                 app.setStatus("找到 " + merged.size() + " 个结果");
                 if (merged.isEmpty()) {
@@ -396,9 +611,14 @@ public class ModrinthTab {
     /** 合并搜索：中文关键词先按汉化表扩展为英文关键词（中英文搜索），按 projectId 去重。 */
     private List<ModrinthApi.Hit> searchAll(String q, String mc, String loader) throws Exception {
         List<String> keys = new ArrayList<>();
-        keys.add(q);
-        if (hasHan(q)) {
-            keys.addAll(ModNames.searchKeys(q));
+        if (type == Type.LOADER && (q == null || q.isBlank())) {
+            keys.addAll(java.util.List.of("iris", "optifine", "canvas", "photon",
+                    "bsl loader", "complementary loader", "oculus"));
+        } else {
+            keys.add(q);
+            if (hasHan(q)) {
+                keys.addAll(ModNames.searchKeys(q));
+            }
         }
         List<ModrinthApi.Hit> merged = new ArrayList<>();
         Set<String> seen = new HashSet<>();
@@ -414,6 +634,7 @@ public class ModrinthTab {
             }
         }
         if (merged.isEmpty() && firstErr != null) throw firstErr;
+        if (type == Type.LOADER) merged.add(0, builtinOptifine());
         return merged;
     }
 
@@ -427,7 +648,7 @@ public class ModrinthTab {
         if (!cf.hasKey()) {
             openCurseForgeWeb(q, mc);
             Ui.info("需要 CurseForge API Key",
-                    "已为你打开 CurseForge 网页搜索。\n\n想用启动器内搜索下载，需要免费申请 Key：\n1. 打开 https://console.curseforge.com 用 CurseForge 账号登录\n2. 点击 My API Key 生成\n3. 设置环境变量 JWH_CURSEFORGE_API_KEY（PCL 同款机制，启动器内不显示 Key）后重新启动启动器");
+                    "已为你打开 CurseForge 网页搜索。\n\n想用启动器内搜索下载，需要免费申请 Key：\n1. 打开 https://console.curseforge.com 用 CurseForge 账号登录\n2. 点击 My API Key 生成\n3. 设置环境变量 JWH_CURSEFORGE_API_KEY（启动器内不显示 Key）后重新启动启动器");
             return;
         }
         Ui.async(() -> {
@@ -443,7 +664,7 @@ public class ModrinthTab {
                     for (CurseForgeApi.Hit h : cf.search(key, mc, curseForgeClassId(), loader, 50)) {
                         if (seen.add(h.projectId())) {
                             merged.add(new ModrinthApi.Hit(h.projectId(), "", h.title(), h.description(),
-                                    h.logoUrl(), h.downloads(), new ArrayList<>()));
+                                    h.logoUrl(), h.downloads(), new ArrayList<>(), "", new ArrayList<>()));
                         }
                     }
                 } catch (Exception ex) {
@@ -454,6 +675,7 @@ public class ModrinthTab {
             Platform.runLater(() -> {
                 items.clear();
                 items.addAll(merged);
+                applySort();
                 rebuildGrid();
                 app.setStatus("找到 " + merged.size() + " 个结果");
                 if (merged.isEmpty()) {
@@ -480,7 +702,7 @@ public class ModrinthTab {
     /** 打开 CurseForge 网页搜索兜底。 */
     private void openCurseForgeWeb(String q, String mc) {
         try {
-            String cls = type == Type.MOD ? "mods" : "texture-packs";
+            String cls = modLike() ? "mods" : "texture-packs";
             String url = "https://www.curseforge.com/minecraft/search?class=" + cls
                     + "&version=" + (mc == null ? "" : mc)
                     + "&search=" + java.net.URLEncoder.encode(q == null ? "" : q, java.nio.charset.StandardCharsets.UTF_8);
@@ -493,6 +715,7 @@ public class ModrinthTab {
     private ModrinthApi.Type apiType() {
         return switch (type) {
             case MOD -> ModrinthApi.Type.MOD;
+            case LOADER -> ModrinthApi.Type.MOD;
             case SHADER -> ModrinthApi.Type.SHADER;
             default -> ModrinthApi.Type.RESOURCEPACK;
         };
@@ -511,6 +734,7 @@ public class ModrinthTab {
      * 若没有任何与内容适配的实例，则提示「未检测到mod适配的加载器」。
      */
     private void openDetailPage(ModrinthApi.Hit hit) {
+        if (OPTIFINE_ID.equals(hit.projectId())) { openOptifinePage(); return; }
         VBox page = new VBox(12);
         page.setPadding(new Insets(20));
         // 与下载中心同款圆角面板（同色垫层铺满，圆角外不露窗口底色）
@@ -672,11 +896,11 @@ public class ModrinthTab {
             String mc = mcBases.getOrDefault(id, id);
             String ld = loaderOf.get(id);
             curMc[0] = mc;
-            curLd[0] = type == Type.MOD ? ld : null;
+            curLd[0] = modLike() ? ld : null;
             java.util.List<ModrinthApi.Version> matches = new ArrayList<>();
             for (ModrinthApi.Version v : versCache) {
                 if (v.gameVersions() == null || !v.gameVersions().contains(mc)) continue;
-                if (type == Type.MOD && (ld == null || v.loaders() == null || !v.loaders().contains(ld))) continue;
+                if (modLike() && (ld == null || v.loaders() == null || !v.loaders().contains(ld))) continue;
                 matches.add(v);
             }
             if (matches.isEmpty()) {
@@ -696,7 +920,7 @@ public class ModrinthTab {
         java.util.List<String> candidates = new ArrayList<>();
         Runnable applyCandidates = () -> {
             if (candidates.isEmpty()) {
-                adaptHint.setText(type == Type.MOD
+                adaptHint.setText(modLike()
                         ? "未检测到mod适配的加载器"
                         : "未检测到适配的实例（请先在「游戏版本」中安装对应版本的游戏）");
                 adaptHint.setStyle("-fx-text-fill:#d9534f; -fx-font-size:13px; -fx-font-weight:bold;");
@@ -708,7 +932,7 @@ public class ModrinthTab {
             String cur = versionBox.getSelectionModel().getSelectedItem();
             if (cur != null && candidates.contains(cur)) targetBox.getSelectionModel().select(cur);
             else targetBox.getSelectionModel().selectFirst();
-            adaptHint.setText(type == Type.MOD
+            adaptHint.setText(modLike()
                     ? "默认使用实例管理中已有的游戏版本与加载器，可下拉切换其他适配实例。"
                     : "默认使用实例管理中已有的游戏版本，可下拉切换其他适配实例。");
             adaptHint.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
@@ -721,7 +945,7 @@ public class ModrinthTab {
         if (cf) {
             // CurseForge 无全量适配清单：直接列本地实例（Mod 仅列带加载器的实例），下载时再校验文件
             for (String id : versionBox.getItems()) {
-                if (type == Type.MOD && loaderOf.get(id) == null) continue;
+                if (modLike() && loaderOf.get(id) == null) continue;
                 candidates.add(id);
             }
             // 列表在此源下没有内容可展示，整块收起，只留一行说明
@@ -743,14 +967,14 @@ public class ModrinthTab {
                     String mc = mcBases.getOrDefault(id, id);
                     if (!gameVers.contains(mc)) continue;
                     String ld = loaderOf.get(id);
-                    if (type == Type.MOD && (ld == null || !loaders.contains(ld))) continue;
+                    if (modLike() && (ld == null || !loaders.contains(ld))) continue;
                     candidates.add(id);
                 }
                 applyCandidates.run();
             }, err -> {
                 // 适配清单读取失败：退化为本地实例列表（Mod 仅列带加载器的实例）
                 for (String id : versionBox.getItems()) {
-                    if (type == Type.MOD && loaderOf.get(id) == null) continue;
+                    if (modLike() && loaderOf.get(id) == null) continue;
                     candidates.add(id);
                 }
                 adaptHint.setText("版本清单读取失败：" + (err.getMessage() == null
@@ -767,7 +991,7 @@ public class ModrinthTab {
                 return;
             }
             String mc = mcBases.getOrDefault(id, id);
-            String loader = type == Type.MOD ? loaderOf.get(id) : null;
+            String loader = modLike() ? loaderOf.get(id) : null;
             ModrinthApi.Version picked = cf ? null : verList.getSelectionModel().getSelectedItem();
             if (!cf && picked == null) {
                 Ui.error("没有可用版本", hit.title() + " 没有与所选实例匹配的下载版本。");
@@ -777,6 +1001,156 @@ public class ModrinthTab {
             sink.message("就绪");
             doDownload(hit, mc, loader, id, picked);
         });
+    }
+
+    /** 内置 OptiFine 详情页：不走 Modrinth，经 BMCLAPI 镜像下载官方安装器并弹出。 */
+    private void openOptifinePage() {
+        VBox page = new VBox(12);
+        page.setPadding(new Insets(20));
+        page.setStyle("-fx-background-color:" + Ui.BG_LIGHT + "; -fx-background-radius:20; -fx-background-insets:0;"
+                + "-fx-border-radius:20; -fx-border-color:" + Ui.BORDER + ";");
+
+        ImageView icon = new ImageView(Ui.GRASS_BLOCK);
+        icon.setFitWidth(56);
+        icon.setFitHeight(56);
+        icon.setPreserveRatio(true);
+        icon.setSmooth(false);
+        javafx.scene.shape.Rectangle iconClip = new javafx.scene.shape.Rectangle(56, 56);
+        iconClip.setArcWidth(10);
+        iconClip.setArcHeight(10);
+        icon.setClip(iconClip);
+
+        Label title = new Label("OptiFine");
+        title.setStyle("-fx-font-size:19px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT + ";");
+        Label sub = new Label("传统光影优化模组 · 安装后为独立版本");
+        sub.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
+        VBox titleBox = new VBox(2);
+        titleBox.setAlignment(Pos.CENTER_LEFT);
+        titleBox.getChildren().addAll(title, sub);
+
+        Button backBtn = new Button("返回");
+        backBtn.setStyle("-fx-text-fill:" + Ui.TEXT + ";");
+        HBox headSpacer = new HBox();
+        HBox.setHgrow(headSpacer, Priority.ALWAYS);
+        HBox head = new HBox(12);
+        head.setAlignment(Pos.CENTER_LEFT);
+        head.getChildren().addAll(icon, titleBox, headSpacer, backBtn);
+
+        Label desc = new Label("OptiFine 官方下载页含浏览器校验、没有开放 API，本启动器经 BMCLAPI 镜像获取官方安装器；"
+                + "下载完成后自动弹出安装器窗口，点击 Install 即安装为独立版本，可在主页选择启动。");
+        desc.setWrapText(true);
+        desc.setMaxHeight(72);
+        desc.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:13px;");
+
+        Label sec = new Label("目标实例（游戏版本）");
+        sec.setStyle("-fx-font-size:14px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT + ";");
+        ComboBox<String> targetBox = new ComboBox<>();
+        targetBox.setPrefWidth(460);
+        targetBox.setPromptText("实例管理中的游戏版本");
+        targetBox.setCellFactory(c -> new ListCell<>() {
+            @Override
+            protected void updateItem(String id, boolean empty) {
+                super.updateItem(id, empty);
+                setText(empty || id == null ? null : displayNames.getOrDefault(id, id));
+            }
+        });
+        targetBox.setButtonCell(new ListCell<>() {
+            @Override
+            protected void updateItem(String id, boolean empty) {
+                super.updateItem(id, empty);
+                setText(empty || id == null ? null : displayNames.getOrDefault(id, id));
+            }
+        });
+        for (String id : versionBox.getItems()) targetBox.getItems().add(id);
+        String cur = versionBox.getSelectionModel().getSelectedItem();
+        if (cur != null && targetBox.getItems().contains(cur)) targetBox.getSelectionModel().select(cur);
+        else if (!targetBox.getItems().isEmpty()) targetBox.getSelectionModel().selectFirst();
+
+        Label hint = new Label("仅按游戏版本查询 OptiFine；OptiFine 不依赖 Fabric/NeoForge 加载器。");
+        hint.setWrapText(true);
+        hint.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
+
+        Button downloadBtn = new Button("下载并运行安装器");
+        downloadBtn.setStyle("-fx-background-color:" + Ui.ACCENT + "; -fx-text-fill:white;"
+                + " -fx-font-weight:bold; -fx-padding:8 26;");
+
+        HBox targetRow = new HBox(10);
+        targetRow.setAlignment(Pos.CENTER_LEFT);
+        Label tl = new Label("目标实例：");
+        tl.setMinWidth(64);
+        targetRow.getChildren().addAll(tl, targetBox);
+        HBox actionRow = new HBox(10);
+        actionRow.setAlignment(Pos.CENTER_RIGHT);
+        actionRow.getChildren().add(downloadBtn);
+        javafx.scene.layout.Region footSpacer = new javafx.scene.layout.Region();
+        VBox.setVgrow(footSpacer, Priority.ALWAYS);
+
+        page.getChildren().addAll(head, desc, new Separator(), sec, targetRow, hint,
+                new Separator(), footSpacer, actionRow);
+        javafx.scene.layout.StackPane wrap = new javafx.scene.layout.StackPane(page);
+        wrap.setStyle("-fx-background-color:" + Ui.BG_LIGHT + ";");
+        app.showFullPage("下载 OptiFine", wrap);
+        backBtn.setOnAction(e -> app.showDownload());
+
+        downloadBtn.setOnAction(e -> installOptifine(targetBox, downloadBtn));
+    }
+
+    /** 按所选实例的 MC 版本，经 BMCLAPI 取最新 OptiFine，下载安装器 jar 后弹出官方安装器。 */
+    private void installOptifine(ComboBox<String> targetBox, Button btn) {
+        String id = targetBox.getSelectionModel().getSelectedItem();
+        if (id == null) {
+            Ui.error("未选择实例", "请先在上方选择目标实例。");
+            return;
+        }
+        String mc = mcBases.getOrDefault(id, id);
+        btn.setDisable(true);
+        sink.message("正在查询 OptiFine 版本…");
+        sink.progress(Double.NaN);
+        com.jwh.launcher.util.Http.DownloadControl[] ctlRef = new com.jwh.launcher.util.Http.DownloadControl[1];
+        Ui.async2(() -> {
+            List<ContentService.OptifineVersion> list = new ContentService(app.config).listOptifine(mc);
+            if (list.isEmpty()) throw new IllegalStateException("OptiFine 没有适配 " + mc + " 的版本");
+            ContentService.OptifineVersion target = null;
+            for (ContentService.OptifineVersion v : list) {
+                if (v.latest()) { target = v; break; }
+            }
+            if (target == null) target = list.get(0);
+            long sz = com.jwh.launcher.util.Http.contentLength(target.downloadUrl());
+            ctlRef[0] = bytesControl(sz);
+            attachCtrl.accept(ctlRef[0]);
+            return new ContentService(app.config).downloadOptifine(target.downloadUrl(), target.filename(), ctlRef[0]);
+        }, jar -> {
+            endDownload(ctlRef[0], () -> {
+                btn.setDisable(false);
+                sink.progress(1);
+                sink.message("下载完成，正在启动安装器…");
+                runInstaller(jar);
+            });
+        }, err -> {
+            endDownload(ctlRef[0], () -> {
+                btn.setDisable(false);
+                sink.progress(0);
+                Ui.error("OptiFine 下载失败", err);
+            });
+        });
+    }
+
+    /** 运行 OptiFine 安装器（GUI），用户点击 Install 后生成独立版本。 */
+    private void runInstaller(Path jar) {
+        String java = app.selectedJavaPath;
+        if (java == null || java.isBlank() || !Files.exists(Path.of(java))) {
+            if (app.javaRuntimes != null && !app.javaRuntimes.isEmpty()) {
+                java = app.javaRuntimes.get(0).javaExe().toString();
+            } else {
+                java = "java";
+            }
+        }
+        try {
+            new ProcessBuilder(java, "-jar", jar.toString()).start();
+            sink.message("安装器已启动，请在弹出的窗口中选择 Install");
+        } catch (Exception e) {
+            Ui.error("启动安装器失败", e);
+        }
     }
 
     /** 版本列表里的发布日期：yyyy-MM-dd，缺失时显示占位。 */
@@ -814,7 +1188,7 @@ public class ModrinthTab {
         if ("CurseForge".equals(sourceBox.getValue())) {
             CurseForgeApi cf = new CurseForgeApi(CurseForgeKey.get());
             if (!cf.hasKey()) {
-                Ui.error("未配置 Key", "请通过环境变量 JWH_CURSEFORGE_API_KEY 配置 CurseForge API Key 后再下载（PCL 同款机制）。");
+                Ui.error("未配置 Key", "请通过环境变量 JWH_CURSEFORGE_API_KEY 配置 CurseForge API Key 后再下载（启动器内不显示 Key）。");
                 return;
             }
             sink.message("正在解析 CurseForge 下载地址…");
@@ -824,7 +1198,7 @@ public class ModrinthTab {
                 CurseForgeApi.File f = cf.pickFile(hit.projectId(), mc, loader);
                 if (f == null) {
                     throw new IllegalStateException("该内容没有适配 " + mc
-                            + (type == Type.MOD ? " 与所选加载器" : "") + " 的文件。");
+                            + (modLike() ? " 与所选加载器" : "") + " 的文件。");
                 }
                 long sz = com.jwh.launcher.util.Http.contentLength(f.url());
                 ctlRef[0] = bytesControl(sz);
@@ -859,7 +1233,7 @@ public class ModrinthTab {
             if (v == null) {
                 sink.progress(0);
                 Ui.error("没有可用版本", hit.title() + " 没有适配 " + mc
-                        + (type == Type.MOD ? " 与所选加载器" : "") + " 的版本。");
+                        + (modLike() ? " 与所选加载器" : "") + " 的版本。");
                 return;
             }
             ModrinthApi.File f = v.primaryFile();
@@ -1039,6 +1413,7 @@ public class ModrinthTab {
     private String subdirLabel() {
         return switch (type) {
             case MOD -> "mods";
+            case LOADER -> "mods";
             case SHADER -> "shaderpacks";
             default -> "resourcepacks";
         };

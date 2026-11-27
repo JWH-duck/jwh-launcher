@@ -32,7 +32,7 @@ public class GameLauncher {
         this.config = config;
     }
 
-    /** NeoForge/Forge 启动必须的 JDK 模块开放参数（反射访问 IMPL_LOOKUP 等内部 API，HMCL/PCL 同款）。 */
+    /** NeoForge/Forge 启动必须的 JDK 模块开放参数（反射访问 IMPL_LOOKUP 等内部 API，通用做法）。 */
     private static final String[] LOADER_ADD_OPENS = {
             "--add-opens", "java.base/java.lang=ALL-UNNAMED",
             "--add-opens", "java.base/java.lang.invoke=ALL-UNNAMED",
@@ -525,6 +525,20 @@ public class GameLauncher {
             if (!gameArgs.contains(r[0])) {
                 gameArgs.add(r[0]);
                 gameArgs.add(vars.get(r[1]));
+            }
+        }
+
+        // 窗口模式：全屏追加 --fullscreen；窗口化确保带上分辨率宽高（模板缺失时补兜底，避免复用上次窗口大小）。
+        if ("fullscreen".equals(config.windowMode)) {
+            if (!gameArgs.contains("--fullscreen")) gameArgs.add("--fullscreen");
+        } else {
+            if (!gameArgs.contains("--width")) {
+                gameArgs.add("--width");
+                gameArgs.add(vars.get("resolution_width"));
+            }
+            if (!gameArgs.contains("--height")) {
+                gameArgs.add("--height");
+                gameArgs.add(vars.get("resolution_height"));
             }
         }
 

@@ -80,7 +80,7 @@ public class VersionManifest {
             }
         }
         try {
-            // 当前源与另一源两路并发抢答（PCL 同款思路：镜像/官方谁快用谁，慢源不阻塞清单刷新）
+            // 当前源与另一源两路并发抢答（通用思路：镜像/官方谁快用谁，慢源不阻塞清单刷新）
             String alt = manifestUrl.contains("bmclapi2")
                     ? MANIFEST_URL
                     : "https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json";

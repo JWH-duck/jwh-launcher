@@ -46,6 +46,9 @@ public class GameInstaller implements com.jwh.launcher.util.Http.DownloadControl
 
     private final LauncherConfig config;
     private volatile DownloadManager activeDm;
+    /** 独立取消标志：主 jar 阶段 activeDm 尚未建立，取消请求也要能落到下载层。 */
+    private final java.util.concurrent.atomic.AtomicBoolean cancelledFlag =
+            new java.util.concurrent.atomic.AtomicBoolean();
     /** 当前阶段的监听者与字节回调标题：单个大文件（加载器主库）下载时用它把「已下多少 MB」推给界面。 */
     private volatile InstallListener activeListener;
     private volatile String activeByteStep = "";
@@ -68,13 +71,20 @@ public class GameInstaller implements com.jwh.launcher.util.Http.DownloadControl
     /** 是否已请求取消。 */
     @Override
     public boolean isCancelled() {
+        if (cancelledFlag.get()) return true;
         DownloadManager d = activeDm;
         return d != null && d.isCancelled();
+    }
+
+    /** 阶段切换兜底检查：已请求取消则中止安装流程。 */
+    private void checkCancelled() throws java.io.IOException {
+        if (isCancelled()) throw new java.io.IOException("下载已取消");
     }
 
     /** UI 取消按钮调用入口。 */
     @Override
     public void cancel() {
+        cancelledFlag.set(true);
         cancelDownload();
     }
     private final int threads;
@@ -91,7 +101,7 @@ public class GameInstaller implements com.jwh.launcher.util.Http.DownloadControl
         return Mirror.rewrite(config, url, versionId);
     }
 
-    /** 文本拉取（版本 JSON 等元数据）：镜像与官方两路并发抢答，先成功者胜出（PCL 同款思路，慢源不阻塞）。 */
+    /** 文本拉取（版本 JSON 等元数据）：镜像与官方两路并发抢答，先成功者胜出（通用思路，慢源不阻塞）。 */
     private String getTextAny(String url, String versionId) throws Exception {
         String mirrored = src(url, versionId);
         if (mirrored.equals(url)) return Http.getText(url);
@@ -104,11 +114,12 @@ public class GameInstaller implements com.jwh.launcher.util.Http.DownloadControl
         String label = target.getFileName() == null ? "file" : target.getFileName().toString();
         return com.jwh.launcher.download.Downloader.fetch(target, -1,
                 com.jwh.launcher.download.ArtifactProbe.Kind.of(target, -1),
-                label, null, mirrored, url);
+                label, this, mirrored, url);
     }
 
     /** 安装一个版本（id 与 manifest 下载地址）。 */
     public void install(String id, String versionJsonUrl, InstallListener listener) throws Exception {
+        checkCancelled();
         // 1. 版本 JSON
         Path vd = config.versionsPath().resolve(id);
         Files.createDirectories(vd);
@@ -141,6 +152,7 @@ public class GameInstaller implements com.jwh.launcher.util.Http.DownloadControl
             v = new JSONObject(text);
         }
 
+        checkCancelled();
         // 2. 主 jar（慢速网络下最多尝试 8 次，Http.download 内部 60 秒读超时 + 断点续传，
         //    每次至少推进部分字节，不会长时间卡死）
         JSONObject client = Json.optObj(Json.optObj(v, "downloads"), "client");
@@ -170,6 +182,7 @@ public class GameInstaller implements com.jwh.launcher.util.Http.DownloadControl
         }
         runTasks(libTasks, "下载依赖库", listener);
 
+        checkCancelled();
         // 4. assets 索引 + 对象
         downloadAssets(v, listener);
     }

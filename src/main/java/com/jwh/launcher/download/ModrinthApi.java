@@ -35,7 +35,8 @@ public class ModrinthApi {
 
     /** 搜索结果条目。 */
     public record Hit(String projectId, String slug, String title, String description,
-                      String iconUrl, long downloads, List<String> categories) {
+                      String iconUrl, long downloads, List<String> categories,
+                      String author, List<String> versions) {
     }
 
     /** 项目版本与可下载文件。 */
@@ -98,6 +99,11 @@ public class ModrinthApi {
                 if (c != null) {
                     for (int j = 0; j < c.length(); j++) cats.add(c.getString(j));
                 }
+                List<String> vers = new ArrayList<>();
+                JSONArray vv = h.optJSONArray("versions");
+                if (vv != null) {
+                    for (int j = 0; j < vv.length(); j++) vers.add(vv.getString(j));
+                }
                 out.add(new Hit(
                         h.optString("project_id"),
                         h.optString("slug"),
@@ -105,7 +111,9 @@ public class ModrinthApi {
                         h.optString("description"),
                         h.optString("icon_url"),
                         h.optLong("downloads", 0),
-                        cats));
+                        cats,
+                        h.optString("author"),
+                        vers));
             }
         }
         return out;

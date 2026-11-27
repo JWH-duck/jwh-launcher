@@ -35,7 +35,7 @@ public class LocalVersions {
             return "原版";
         }
 
-        /** HMCL 式显示名：加载器版本显示为 "1.21.1 · NeoForge 21.1.264"，原版直接显示 id。 */
+        /** 通用显示名：加载器版本显示为 "1.21.1 · NeoForge 21.1.264"，原版直接显示 id。 */
         public String displayName() {
             if (loaderName != null && !loaderName.isBlank()) {
                 return mcBase + " · " + loaderName + (loaderVer == null || loaderVer.isBlank() ? "" : " " + loaderVer);
@@ -100,7 +100,7 @@ public class LocalVersions {
         return list;
     }
 
-    /** HMCL 式可见列表：隐藏被加载器版本继承的基础版本（如原版 1.21.1 已被 NeoForge 使用）。
+    /** 通用可见列表：隐藏被加载器版本继承的基础版本（如原版 1.21.1 已被 NeoForge 使用）。
      *  空壳加载器模板（只有 json/jar、没有 mods 也没有存档）**仅当存在同显示名的另一已装版本时**隐藏：
      *  那是整合包安装时把基础加载器版本复制为独立实例后遗留的基础版副本，若不隐藏会与整合包
      *  实例显示名完全一样（如都是「1.21.11 · Fabric」）。用户主动下载安装的加载器版本

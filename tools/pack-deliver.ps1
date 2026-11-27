@@ -184,7 +184,7 @@ $zj.Dispose()
 
 # ---------- STEP6 打源码 zip ----------
 Write-Output "STEP6 zip source"
-robocopy $projDir $srcStage /E /NFL /NDL /NJH /NJS /NP /XD target dist .minecraft logs .creative-design .git CustomSkinLoader music /XF *.log *.bak *.bak_* *.bak-* | Out-Null
+robocopy $projDir $srcStage /E /NFL /NDL /NJH /NJS /NP /XD target dist .minecraft logs .creative-design .git CustomSkinLoader music ui-preview /XF *.log *.bak *.bak_* *.bak-* | Out-Null
 Get-ChildItem -LiteralPath $srcStage -Filter "*.png" -File | Remove-Item -Force
 if (Test-Path -LiteralPath $RoomService) {
     robocopy $RoomService (Join-Path $srcStage "jwh-room-service") /E /NFL /NDL /NJH /NJS /NP /XD node_modules __pycache__ | Out-Null

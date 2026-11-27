@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Mod 名称/描述汉化表（对标 HMCL 的 Mod 列表显示）：下载中心列表里的 Mod 名称
+ * Mod 名称/描述汉化表（Mod 列表显示）：下载中心列表里的 Mod 名称
  * 显示为「中文名 (原名)」，常用 Mod 的描述也显示中文；未收录的保持 Modrinth/CF
  * 原文。匹配键优先 slug，其次原 title（均小写匹配）。
  */

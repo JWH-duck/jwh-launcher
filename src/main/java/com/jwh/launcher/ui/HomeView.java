@@ -34,6 +34,9 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.concurrent.Worker;
 import javafx.scene.paint.Color;
+import javafx.scene.paint.CycleMethod;
+import javafx.scene.paint.LinearGradient;
+import javafx.scene.paint.Stop;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
@@ -140,10 +143,19 @@ public class HomeView {
 
     public HomeView(LauncherApp app) {
         this.app = app;
+        // 选中实例后回填版本名/类型信息；无选中项时回到空状态文案。
+        // （此前缺少该监听：下拉能列出实例，但启动按钮下方一直停在初始的「未安装游戏实例」。）
+        versionList.getSelectionModel().selectedItemProperty().addListener((obs, old, now) -> {
+            if (now != null) {
+                updateSelection(now);
+            } else {
+                showNoInstance();
+            }
+        });
     }
 
     /** 主页根节点（首次构建后缓存，避免每次切页都重建整套节点）。 */
-    private VBox cachedRoot;
+    private Region cachedRoot;
 
     /**
      * 迷你播放器：已移到窗口右上角（LauncherApp 顶栏，全页面共用一份）。
@@ -158,224 +170,200 @@ public class HomeView {
     /** 上一次填过的服务器地址（只存在内存里，方便下次改个端口就启动）。 */
     private String lastServer = "";
 
-    public VBox root() {
+    public Region root() {
         if (cachedRoot != null) {
             refresh();
             return cachedRoot;
         }
 
-        VBox body = new VBox();
-        body.setPadding(new Insets(16));
-        body.setStyle("-fx-background-color:" + Ui.BG + ";");
-        // 必须显式要求撑满，否则父 StackPane 只按 pref 尺寸居中放置，启动键会浮到中间
+        javafx.scene.layout.AnchorPane body = new javafx.scene.layout.AnchorPane();
+        body.setStyle("-fx-background-color:transparent;");
         body.setMaxWidth(Double.MAX_VALUE);
         body.setMaxHeight(Double.MAX_VALUE);
 
-        // ---- 左：版本列表 ----
-        VBox left = new VBox(10);
-        left.setPrefWidth(330);
-        instTitle.setStyle("-fx-font-size:16px; -fx-font-weight:bold; -fx-text-fill:" + Ui.TEXT + ";");
-        emptyHint.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:13px;");
-        versionList.setPrefHeight(420);
-        versionList.setPlaceholder(emptyHint);
-        versionList.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-control-inner-background:" + Ui.PANEL + ";"
-                + "-fx-background-radius:14; -fx-border-radius:14; -fx-padding:6;");
-        versionList.setCellFactory(c -> new ListCell<>() {
-            private final ImageView icon = new ImageView();
-            private final Label name = new Label();
-            private final HBox row = new HBox(6);
+        // 设计稿群像背景铺满内容区（背景图 cover），上覆深色黑罩压暗
+        java.net.URL bgUrl = getClass().getResource("/home_mobs.png");
+        String bgCss = bgUrl == null
+                ? "-fx-background-color:#0c0c0c;"
+                : "-fx-background-color:#0c0c0c; -fx-background-image:url('" + bgUrl.toExternalForm() + "'); -fx-background-size:cover; -fx-background-position:center;";
+        body.setStyle(bgCss);
 
-            {
-                icon.setFitWidth(40);
-                icon.setFitHeight(40);
-                icon.setPreserveRatio(true);
-                icon.setSmooth(false); // 像素风头像保持锐利
-                name.setStyle("-fx-text-fill:" + Ui.TEXT + "; -fx-font-size:14px;");
-                row.setAlignment(Pos.CENTER_LEFT);
-                row.getChildren().addAll(icon, name);
-                // cell 本体透明，圆角卡片由 row 承担，选中/悬停时切换背景
-                setStyle("-fx-background-color:transparent; -fx-padding:2 2;");
-                selectedProperty().addListener((obs, o, n) -> applyRowStyle());
-                hoverProperty().addListener((obs, o, n) -> applyRowStyle());
+        // 深色黑罩：压暗底层背景，贴近设计稿 #0c0c0c @ 76% 不透明
+        Rectangle shade = new Rectangle();
+        shade.setFill(Color.color(0.047, 0.047, 0.047, 0.76));
+        shade.widthProperty().bind(body.widthProperty());
+        shade.heightProperty().bind(body.heightProperty());
+        javafx.scene.layout.AnchorPane.setTopAnchor(shade, 0.0);
+        javafx.scene.layout.AnchorPane.setRightAnchor(shade, 0.0);
+        javafx.scene.layout.AnchorPane.setBottomAnchor(shade, 0.0);
+        javafx.scene.layout.AnchorPane.setLeftAnchor(shade, 0.0);
+
+        // ===== 左上：账号卡 =====
+        VBox card = new VBox(14);
+        card.setPadding(new Insets(16));
+        card.setPrefWidth(440);
+        card.setMaxHeight(Double.MAX_VALUE);
+        card.getStyleClass().add("jwh-card");
+        card.setCursor(Cursor.HAND);
+        card.setOnMouseClicked(e -> app.showLogin());
+
+        ImageView cardAvatar = new ImageView();
+        cardAvatar.setFitWidth(60);
+        cardAvatar.setFitHeight(60);
+        cardAvatar.setPreserveRatio(true);
+        cardAvatar.setSmooth(false);
+        try (java.io.InputStream in = getClass().getResourceAsStream("/avatar_steve.png")) {
+            if (in != null) cardAvatar.setImage(new Image(in));
+        } catch (Exception ignored) {
+        }
+        Label cardName = new Label("未登录");
+        cardName.setStyle("-fx-text-fill:#ffffff; -fx-font-size:20px; -fx-font-weight:bold;");
+        Label cardType = new Label("点击登录账户");
+        cardType.setStyle("-fx-text-fill:rgba(255,255,255,0.75); -fx-font-size:14px;");
+        VBox idBox = new VBox(1);
+        idBox.setAlignment(Pos.CENTER_LEFT);
+        idBox.getChildren().addAll(cardName, cardType);
+        HBox avatarRow = new HBox(12, cardAvatar, idBox);
+        avatarRow.setAlignment(Pos.CENTER_LEFT);
+        avatarRow.setStyle("-fx-cursor:hand;");
+        avatarRow.setOnMouseClicked(e -> app.showLogin());
+        VBox.setMargin(avatarRow, new Insets(38, 0, 0, 24));
+
+        Label phTitle = new Label("即将推出");
+        phTitle.setStyle("-fx-text-fill:#ffffff; -fx-font-size:16px; -fx-font-weight:bold;");
+        Label phSub = new Label("即将推出文本文案");
+        phSub.setStyle("-fx-text-fill:rgba(255,255,255,0.75); -fx-font-size:12px;");
+        VBox textBar = new VBox(4, phTitle, phSub);
+        textBar.setAlignment(Pos.CENTER_LEFT);
+        textBar.setPadding(new Insets(10, 12, 10, 12));
+        textBar.setStyle("-fx-background-color:#6f6f6f;");
+        Region upper = new Region();
+        VBox.setVgrow(upper, Priority.ALWAYS);
+        VBox versionBox = new VBox(upper, textBar);
+        versionBox.setStyle("-fx-background-color:#d6d6d6; -fx-background-radius:11;");
+        // 白色预览框：固定扁高度，不参与卡片弹性拉伸。
+        versionBox.setPrefHeight(240);
+        versionBox.setMinHeight(240);
+        versionBox.setMaxHeight(240);
+        // 头像行与预览框之间的弹性占位：吃掉卡片底部剩余空白，把预览框及下方内容整体下压贴底。
+        Region topSpacer = new Region();
+        VBox.setVgrow(topSpacer, Priority.ALWAYS);
+
+        // 头部信息区与下方白色预览框之间的分隔横线
+        Region divider = new Region();
+        divider.setPrefHeight(1);
+        divider.setStyle("-fx-background-color:rgba(255,255,255,0.22);");
+        VBox.setMargin(divider, new Insets(0, 0, 12, 0));
+
+        HBox dots = new HBox(10);
+        dots.setAlignment(Pos.CENTER);
+        for (int i = 0; i < 5; i++) {
+            javafx.scene.shape.Circle c = new javafx.scene.shape.Circle(5);
+            if (i == 0) {
+                c.setFill(Color.WHITE);
+            } else {
+                c.setFill(Color.web("#d982c2", 0.55));
             }
-
-            private void applyRowStyle() {
-                String bg = "transparent";
-                if (isSelected()) bg = "rgba(63,169,245,0.16)";
-                else if (isHover()) bg = "rgba(0,0,0,0.05)";
-                row.setStyle("-fx-background-color:" + bg + "; -fx-background-radius:10; -fx-padding:6 8;");
-            }
-
-            @Override
-            protected void updateItem(LocalVersions.LocalVersion v, boolean empty) {
-                super.updateItem(v, empty);
-                if (empty || v == null) {
-                    setGraphic(null);
-                } else {
-                    icon.setImage(iconFor(v));
-                    name.setText(v.displayName());
-                    setGraphic(row);
-                    applyRowStyle();
-                }
-            }
-        });
-        versionList.getSelectionModel().selectedItemProperty().addListener((obs, o, n) -> {
-            if (n != null) {
-                updateSelection(n);
-            } else if (versionList.getItems().isEmpty()) {
-                // 删光实例后的空状态：不能继续显示上一个版本的版本号
-                showNoInstance();
-            }
-        });
-        VBox.setVgrow(versionList, Priority.ALWAYS);
-        javafx.scene.layout.FlowPane leftBtns = new javafx.scene.layout.FlowPane(8, 8);
-        leftBtns.setMaxWidth(300);
-        Button refreshBtn = new Button("刷新");
-        refreshBtn.setStyle(auxBtnStyle());
-        refreshBtn.setOnAction(e -> refresh());
-        Button goDownload = new Button("去下载版本 / 加载器");
-        goDownload.setStyle("-fx-background-color:" + Ui.ACCENT + "; -fx-text-fill:white;"
-                + "-fx-background-radius:6; -fx-padding:7 12;");
-        goDownload.setOnAction(e -> app.showDownload());
-        leftBtns.getChildren().addAll(refreshBtn, goDownload);
-        left.getChildren().addAll(instTitle, versionList, leftBtns);
-
-        // ---- 右：版本信息卡 + 启动 ----
-        VBox right = new VBox(12);
-        right.setPrefWidth(430);
-        HBox.setHgrow(right, Priority.ALWAYS);
-
-        // 版本信息卡
-        VBox infoCard = new VBox(4);
-        infoCard.setPadding(new Insets(14));
-        infoCard.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:14; -fx-border-radius:14;");
-        verTitle.setStyle("-fx-text-fill:" + Ui.TEXT + "; -fx-font-size:21px; -fx-font-weight:bold;");
-        verMeta.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:13px;");
-        verMeta.setWrapText(true);
-        infoCard.getChildren().addAll(verTitle, verMeta);
-
-        // 启动按钮（主操作）：与右侧箭头共用一块蓝色底座
-        // 背景/边框全部清空，避免 Modena 主题给按钮画一圈圆角描边、把底座切成上下两块
-        launchBtn.setBackground(javafx.scene.layout.Background.EMPTY);
-        launchBtn.setBorder(javafx.scene.layout.Border.EMPTY);
-        // 去掉 "button" 样式类，避免 Modena 主题的默认底色/hover 底色把底座切成两块
-        launchBtn.getStyleClass().clear();
-        launchBtn.setStyle("-fx-background-color:transparent; -fx-background-insets:0;"
-                + "-fx-text-fill:white; -fx-font-size:16px;"
-                + "-fx-font-weight:bold; -fx-pref-height:38; -fx-pref-width:112;"
-                + "-fx-alignment:center; -fx-padding:0;"
-                + "-fx-cursor:hand; -fx-focus-color:transparent; -fx-faint-focus-color:transparent;");
-        launchBtn.setOnAction(e -> launch());
-
-        // 辅助按钮：均分一行
-        Button repairBtn = new Button("修复文件");
-        repairBtn.setStyle(auxBtnStyle());
-        repairBtn.setMaxWidth(Double.MAX_VALUE);
-        repairBtn.setOnAction(e -> repairVersion());
-        Button deleteBtn = new Button("删除版本");
-        deleteBtn.setStyle(auxBtnStyle() + "-fx-text-fill:#d64545;");
-        deleteBtn.setMaxWidth(Double.MAX_VALUE);
-        deleteBtn.setOnAction(e -> deleteVersion());
-        Button instBtn = new Button("实例管理");
-        instBtn.setStyle(auxBtnStyle());
-        instBtn.setMaxWidth(Double.MAX_VALUE);
-        instBtn.setOnAction(e -> {
-            LocalVersions.LocalVersion sel = versionList.getSelectionModel().getSelectedItem();
-            if (sel == null) {
-                Ui.error("未选择版本", "请先在左侧选择一个已安装的版本，再打开实例管理。");
-                return;
-            }
-            this.openInstanceManager(sel);
-        });
-        Button settingBtn = new Button("Java / 内存");
-        settingBtn.setStyle(auxBtnStyle());
-        settingBtn.setMaxWidth(Double.MAX_VALUE);
-        settingBtn.setOnAction(e -> app.showSettings(true));
-        HBox auxRow = new HBox(8);
-        auxRow.setAlignment(Pos.CENTER);
-        for (Button b : new Button[]{repairBtn, deleteBtn, instBtn, settingBtn}) {
-            HBox.setHgrow(b, Priority.ALWAYS);
-            auxRow.getChildren().add(b);
+            dots.getChildren().add(c);
         }
 
-        // 底部弹性占位（日志已移至左侧导航「日志」页）
-        VBox spacer = new VBox();
-        VBox.setVgrow(spacer, Priority.ALWAYS);
+        Button importBtn = new Button("导入游戏版本 / 整合包");
+        importBtn.setMaxWidth(Double.MAX_VALUE);
+        importBtn.setPrefHeight(46);
+        importBtn.setStyle("-fx-background-color:#1f1529; -fx-text-fill:#ffffff; -fx-background-radius:11;"
+                + " -fx-font-size:15px; -fx-cursor:hand;");
+        importBtn.setOnAction(e -> app.showDownload());
 
-        VBox launchGroup = this.buildLaunchGroup();
-        HBox launchRow = new HBox(launchGroup);
-        launchRow.setAlignment(Pos.BOTTOM_RIGHT);
-        launchRow.setFillHeight(false); // 不让外层把启动按键组纵向拉伸
+        Label verVersionLabel = new Label("当前启动器版本：V" + LauncherApp.APP_VERSION + "（最新）");
+        verVersionLabel.setStyle("-fx-text-fill:rgba(255,255,255,0.7); -fx-font-size:11px;");
+        verVersionLabel.setAlignment(Pos.CENTER);
 
-        // 极简主页：面板（版本列表卡、版本信息卡、辅助按钮行）全部不上场景。
-        // 上：minecraft.wiki 两张 game drops 卡（实时网页裁切）
-        // 下：左侧弹性 + 「你知道吗」竖条（宽 = 单卡 2/5，底边停在启动键上方） + 启动按键组
-        HBox wikiRow = new HBox(this.buildWikiCard(body));
-        wikiRow.setAlignment(Pos.TOP_LEFT);
-        wikiRow.setFillHeight(false);
-        // 锁住卡片自身的 2:1 高度，别让下面那一行把 wikiRow 压扁
-        wikiRow.setMinHeight(Region.USE_PREF_SIZE);
-        wikiRow.setMaxHeight(Region.USE_PREF_SIZE);
+        card.getChildren().addAll(avatarRow, topSpacer, divider, versionBox, dots, importBtn, verVersionLabel);
+        javafx.scene.layout.AnchorPane.setTopAnchor(card, 20.0);
+        javafx.scene.layout.AnchorPane.setLeftAnchor(card, 20.0);
+        javafx.scene.layout.AnchorPane.setBottomAnchor(card, 20.0);
 
-        Region dyk = this.buildDidYouKnow();
-        // 同卡片：宽度锁成 USE_PREF_SIZE 会和 prefWidth 绑定打转，放大后缩不回来
-        dyk.setMinWidth(0);
-        dyk.setMaxWidth(Double.MAX_VALUE);
-        // 不放开 maxHeight，VBox.setVgrow 就不生效，面板撑不到启动键上方
-        dyk.setMaxHeight(Double.MAX_VALUE);
-        // minHeight 归零：否则这一批事实行数一变，面板就跟着变长变短
-        dyk.setMinHeight(0);
-        // 宽 = 单卡宽的 52%（字号放大后太窄会把每条事实折成三行，这里放宽一些）
-        dyk.prefWidthProperty().bind(body.widthProperty().subtract(32).multiply(0.26));
-        VBox.setVgrow(dyk, Priority.ALWAYS);
+        // 卡片右侧粉色凸舌（朝右三角旗装饰）
+        javafx.scene.shape.Polygon tab = new javafx.scene.shape.Polygon(
+                0.0, 0.0, 28.0, 16.0, 0.0, 32.0);
+        tab.setFill(Color.web("#d982c2"));
+        javafx.scene.layout.AnchorPane.setLeftAnchor(tab, 460.0);
+        javafx.scene.layout.AnchorPane.setTopAnchor(tab, 96.0);
 
-        VBox dykCol = new VBox(dyk);
-        dykCol.setFillWidth(true);
-        dykCol.setMinWidth(Region.USE_PREF_SIZE);
-        // VBox 的 maxHeight 默认按内容算，HBox 的 fillHeight 就拉不动它，
-        // 结果整列停在「内容高度」，面板下方留一片空白。放开才能撑到底。
-        dykCol.setMaxHeight(Double.MAX_VALUE);
-        dykCol.setMinHeight(0);
-        // 「你知道吗」下方这块空白放迷你音乐播放器：高度与启动按键组一致，
-        // 上面留 8px 间隙，底边正好和「启动游戏」齐平（占位与原 reserveUnder 等价）。
-        // 「你知道吗」下方不再挂音乐条：播放器已移到窗口右上角（LauncherApp 顶栏，
-        // 全页面共用一份）。空出来的这块高度放「多人游戏」入口，高度仍绑启动按键组，
-        // 「你知道吗」面板尺寸完全照旧。
-        Button multiplayerBtn = new Button("多人游戏");
-        // 和「启动游戏」按键组一模一样大：宽高都直接绑到 launchGroup，
-        // 两块按钮左右并排时上下沿完全齐平。
-        multiplayerBtn.prefWidthProperty().bind(launchGroup.widthProperty());
-        multiplayerBtn.minWidthProperty().bind(launchGroup.widthProperty());
-        multiplayerBtn.prefHeightProperty().bind(launchGroup.heightProperty());
-        multiplayerBtn.minHeightProperty().bind(launchGroup.heightProperty());
-        multiplayerBtn.setStyle(MULTI_BTN_STYLE);
-        multiplayerBtn.setCursor(Cursor.HAND);
-        multiplayerBtn.setFocusTraversable(false);
-        multiplayerBtn.setOnMouseEntered(e -> multiplayerBtn.setStyle(MULTI_BTN_HOVER_STYLE));
-        multiplayerBtn.setOnMouseExited(e -> multiplayerBtn.setStyle(MULTI_BTN_STYLE));
-        multiplayerBtn.setOnAction(e -> multiplayer());
+        // ===== 右上：实时时钟（对齐右下角人物正上方） =====
+        Label clockLabel = new Label();
+        clockLabel.setStyle("-fx-text-fill:#ffffff; -fx-font-size:22px;");
+        HBox clockBox = new HBox(clockLabel);
+        clockBox.setAlignment(Pos.CENTER);
+        clockBox.setPrefWidth(240);
+        javafx.scene.layout.AnchorPane.setTopAnchor(clockBox, 16.0);
+        javafx.scene.layout.AnchorPane.setRightAnchor(clockBox, 120.0);
+        updateClock(clockLabel);
+        javafx.animation.Timeline clockTimer = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(Duration.seconds(1), e -> updateClock(clockLabel)));
+        clockTimer.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        clockTimer.play();
 
-        HBox multiRow = new HBox(multiplayerBtn);
-        multiRow.setAlignment(Pos.CENTER_RIGHT);
-        multiRow.setMinHeight(0);
-        multiRow.prefHeightProperty().bind(launchGroup.heightProperty());
-        multiRow.maxHeightProperty().bind(launchGroup.heightProperty());
-        VBox.setMargin(multiRow, new Insets(8, 0, 0, 0));
-        // 和「启动游戏」拉开间距：整列宽度不变（「你知道吗」尺寸不受影响），
-        // 只把按钮自身往左平移，右边自然空出这段缝。
-        multiplayerBtn.setTranslateX(-40.0);
-        dykCol.getChildren().add(multiRow);
+        // 右上唱片/音乐图标（后续接音乐播放控件）
+        Image recordImg = null;
+        try (java.io.InputStream in = getClass().getResourceAsStream("/icons/nav_music.png")) {
+            if (in != null) recordImg = new Image(in);
+        } catch (Exception ignored) {
+        }
+        ImageView recordView = new ImageView(recordImg);
+        recordView.setFitWidth(40);
+        recordView.setFitHeight(40);
+        recordView.setSmooth(false);
+        StackPane recordBtn = new StackPane(recordView);
+        recordBtn.setPrefSize(40, 40);
+        recordBtn.setMinSize(40, 40);
+        recordBtn.setMaxSize(40, 40);
+        recordBtn.setCursor(Cursor.HAND);
+        recordBtn.setPickOnBounds(true);
 
-        VBox mapPanel = this.buildMapPanel();
-        HBox.setHgrow(mapPanel, Priority.ALWAYS);
+        // 正下方倒影：斜俯视椭圆投影——外层镜面翻转并纵向压缩成椭圆，椭圆长轴固定水平
+        ImageView recordRefl = new ImageView(recordImg);
+        recordRefl.setFitWidth(40);
+        recordRefl.setFitHeight(18);
+        recordRefl.setOpacity(0.38);
+        recordRefl.setSmooth(false);
+        Rectangle reflMask = new Rectangle(40, 18);
+        reflMask.setFill(new LinearGradient(0, 0, 0, 1, true, CycleMethod.NO_CYCLE,
+                new Stop(0.0, Color.rgb(255, 255, 255, 0.0)),
+                new Stop(0.3, Color.rgb(255, 255, 255, 0.16)),
+                new Stop(0.65, Color.rgb(255, 255, 255, 0.55)),
+                new Stop(1.0, Color.rgb(255, 255, 255, 1.0))));
+        recordRefl.setClip(reflMask);
+        StackPane reflWrap = new StackPane(recordRefl);
+        reflWrap.setScaleY(-0.55);
+        VBox recordGroup = new VBox(recordBtn, reflWrap);
+        recordGroup.setAlignment(Pos.TOP_CENTER);
+        recordGroup.setSpacing(0);
+        javafx.scene.layout.AnchorPane.setTopAnchor(recordGroup, 12.0);
+        javafx.scene.layout.AnchorPane.setRightAnchor(recordGroup, 24.0);
 
-        // 皮肤小人：站在「启动游戏」正上方、「你知道吗」右侧的空区里。
-        // 复用皮肤库同一个 SkinCanvas，所以动画、视角、光影完全一致。
-        // 画布宽度比站位列宽出 80px：挥手时手臂是往左上斜举的，
-        // 画布只有 150 宽时手臂会在画布左边缘被裁掉，看上去就像被「你知道吗」压住。
-        // 加宽之后左侧多出 60px 的绘制空间，人物本体位置不变（下面 translateX 已补偿）。
+        // 播放时主体唱片顺时针转动；倒影为固定朝向的斜俯视椭圆投影
+        javafx.animation.Timeline spinTimer = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(Duration.millis(16), e -> {
+                    double a = recordView.getRotate() + 1.6;
+                    recordView.setRotate(a);
+                }));
+        spinTimer.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        MusicBar mb = musicBar();
+        if (mb != null) {
+            mb.playingProperty().addListener((o, was, now) -> {
+                if (now) spinTimer.play(); else spinTimer.pause();
+            });
+            if (mb.isPlaying()) spinTimer.play();
+            // 点唱片图标：暂停 / 继续内置音乐；播放状态变化会经上面的监听联动停转 / 续转
+            recordBtn.setOnMouseClicked(e -> {
+                mb.togglePlay();
+                e.consume();
+            });
+        }
+
+        // ===== 皮肤小人：站在启动键上方偏右 =====
         this.homeSkin = new SkinCanvas(240, 232);
-        // 正对屏幕：皮肤库预览默认是 yaw 20 的侧身，主页这里要正面
         this.homeSkin.setYaw(0.0);
         this.homeSkin.setPitch(3.0);
         this.homeSkin.setCursor(Cursor.HAND);
@@ -383,23 +371,10 @@ public class HomeView {
             this.homeSkin.triggerRandomAction();
             e.consume();
         });
-        // 顶部弹性占位把小人压到底部，脚正好踩在「启动游戏」上方
-        Region skinTop = new Region();
-        VBox.setVgrow(skinTop, Priority.ALWAYS);
-        VBox skinCol = new VBox(skinTop, this.homeSkin);
-        skinCol.setAlignment(Pos.BOTTOM_CENTER);
-        skinCol.setMaxHeight(Double.MAX_VALUE);
-        skinCol.setMinHeight(0);
-        // 站位微调：整体往右挪一点，别和启动键左边缘完全对齐（视觉上偏左）。
-        // 画布加宽后中心会自己往右漂，这里的数值已把那次漂移抵掉，人物落点和加宽前一致。
-        this.homeSkin.setTranslateX(20.0);
-        // 宽度跟启动按键组绑死，列宽就和按键一样，竖条不会被推着移位
-        skinCol.minWidthProperty().bind(launchGroup.widthProperty());
-        skinCol.prefWidthProperty().bind(launchGroup.widthProperty());
-        skinCol.maxWidthProperty().bind(launchGroup.widthProperty());
-        skinCol.sceneProperty().addListener((o, wasNull, nowScene) -> {
+        javafx.scene.layout.AnchorPane.setRightAnchor(this.homeSkin, 120.0);
+        javafx.scene.layout.AnchorPane.setBottomAnchor(this.homeSkin, 120.0);
+        this.homeSkin.sceneProperty().addListener((o, wasNull, nowScene) -> {
             if (nowScene != null) {
-                // 鼠标在窗口里游走时，小人脑袋跟着转，看起来像是盯着光标
                 nowScene.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_MOVED, this::aimHomeSkinAt);
                 nowScene.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_EXITED,
                         ev -> { if (this.homeSkin != null) this.homeSkin.clearHeadAim(); });
@@ -408,25 +383,43 @@ public class HomeView {
                 this.homeSkin.stopAnimation();
             }
         });
-        // 小人 + 启动按键合成一列：竖条右侧就是这一列，位置和以前完全一致
-        VBox rightCol = new VBox(skinCol, launchRow);
-        rightCol.setMinWidth(Region.USE_PREF_SIZE);
-        VBox.setVgrow(skinCol, Priority.ALWAYS);
 
-        HBox bottomRow = new HBox(mapPanel, dykCol, rightCol);
-        // MC百科入口已经进了滚动区（随内容滚），面板只跟维基卡留一点缝
-        HBox.setMargin(mapPanel, new Insets(8, 0, 0, 0));
-        HBox.setMargin(rightCol, new Insets(0, 8, 0, 0));
-        bottomRow.setAlignment(Pos.TOP_LEFT);
-        // maxHeight 不放开，VBox.setVgrow 只会撑到「内容高度」，面板就停在半空、下面留一片空白
-        bottomRow.setMaxHeight(Double.MAX_VALUE);
-        VBox.setVgrow(bottomRow, Priority.ALWAYS);
+        // ===== 底部：多人游戏 + 启动游戏 =====
+        Button multiplayerBtn = new Button("多人游戏");
+        multiplayerBtn.setPrefSize(188, 56);
+        multiplayerBtn.setStyle("-fx-background-color:#733e6f; -fx-text-fill:#ffffff; -fx-background-radius:12;"
+                + " -fx-font-size:16px; -fx-font-weight:bold; -fx-cursor:hand;");
+        multiplayerBtn.setOnMouseEntered(e -> multiplayerBtn.setStyle(
+                "-fx-background-color:#864b82; -fx-text-fill:#ffffff; -fx-background-radius:12;"
+                        + " -fx-font-size:16px; -fx-font-weight:bold; -fx-cursor:hand;"));
+        multiplayerBtn.setOnMouseExited(e -> multiplayerBtn.setStyle(
+                "-fx-background-color:#733e6f; -fx-text-fill:#ffffff; -fx-background-radius:12;"
+                        + " -fx-font-size:16px; -fx-font-weight:bold; -fx-cursor:hand;"));
+        multiplayerBtn.setOnAction(e -> multiplayer());
 
-        body.getChildren().setAll(wikiRow, bottomRow);
+        VBox launchGroup = this.buildLaunchGroup();
+        HBox bottomRow = new HBox(16, multiplayerBtn, launchGroup);
+        bottomRow.setAlignment(Pos.BOTTOM_RIGHT);
+        // 启动组按钮本体下方还嵌了一行版本号，垫高多人钮底部，使两钮本体底边持平。
+        HBox.setMargin(multiplayerBtn, new Insets(0, 0, 21, 0));
+        javafx.scene.layout.AnchorPane.setBottomAnchor(bottomRow, 20.0);
+        javafx.scene.layout.AnchorPane.setRightAnchor(bottomRow, 24.0);
+
+        body.getChildren().addAll(shade, card, tab, clockBox, recordGroup, this.homeSkin, bottomRow);
 
         refresh();
         cachedRoot = body;
         return body;
+    }
+
+    /** 右上角时钟：12 小时制 AM/PM，每秒刷新。 */
+    private void updateClock(Label l) {
+        java.time.LocalTime t = java.time.LocalTime.now();
+        int h = t.getHour();
+        String ap = h < 12 ? "AM" : "PM";
+        int h12 = h % 12;
+        if (h12 == 0) h12 = 12;
+        l.setText(String.format("%s %d:%02d", ap, h12, t.getMinute()));
     }
 
     /**
@@ -1606,35 +1599,36 @@ public class HomeView {
     }
 
 
-    /** 启动游戏 + 实例切换箭头：共用一块蓝色底座，两者之间一条竖线；底座下沿再嵌一行已选版本号。 */
+    /** 启动游戏 + 实例切换箭头：与左侧「多人游戏」等宽的紫色整块钮，箭头嵌在钮内右侧；底座下沿再嵌一行已选版本号。 */
     private VBox buildLaunchGroup() {
-        Region sep = new Region();
-        sep.setPrefWidth(1);
-        sep.setMinWidth(1);
-        sep.setMaxWidth(1);
-        sep.setPrefHeight(22);
-        sep.setStyle("-fx-background-color:rgba(255,255,255,0.30);");
-
         Polygon tri = new Polygon(0.0, 7.0, 6.0, 1.0, 12.0, 7.0);
         tri.setFill(Color.WHITE);
         this.launchArrow = new StackPane(tri);
-        this.launchArrow.setPrefWidth(30);
-        this.launchArrow.setMinWidth(30);
-        this.launchArrow.setPrefHeight(38);
+        this.launchArrow.setPrefWidth(24);
+        this.launchArrow.setMinWidth(24);
+        this.launchArrow.setPrefHeight(56);
         this.launchArrow.setCursor(Cursor.HAND);
         this.launchArrow.setStyle("-fx-background-color:transparent;");
         this.launchArrow.setOnMouseClicked(e -> this.toggleInstancePopup(this.launchArrow));
 
-        HBox btnRow = new HBox(this.launchBtn, sep, this.launchArrow);
-        btnRow.setAlignment(Pos.CENTER);
-        btnRow.setPrefWidth(143);
-        btnRow.setMinWidth(143);
-        btnRow.setPrefHeight(38);
+        // 启动按钮本体：透明底只承文字，整块紫色由 btnRow 底座承担，避免继承全局 .button 深灰描边。
+        this.launchBtn.setStyle("-fx-background-color:transparent; -fx-border-color:transparent; -fx-background-radius:12;"
+                + " -fx-text-fill:#ffffff; -fx-font-size:16px; -fx-font-weight:bold; -fx-cursor:hand;");
+        this.launchBtn.setPrefHeight(56);
+        HBox.setHgrow(this.launchBtn, Priority.ALWAYS);
 
-        // 已选版本号：直接嵌在蓝色底座下沿，白字，超出省略
+        HBox btnRow = new HBox(10, this.launchBtn, this.launchArrow);
+        btnRow.setAlignment(Pos.CENTER);
+        btnRow.setPrefWidth(188);
+        btnRow.setMinWidth(188);
+        btnRow.setPrefHeight(56);
+        btnRow.setStyle("-fx-background-color:#733e6f; -fx-background-radius:12;"
+                + " -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.25), 5, 0, 0, 2);");
+
+        // 已选版本号：直接嵌在按钮下沿，白字，超出省略
         launchVerLabel.setStyle("-fx-text-fill:rgba(255,255,255,0.82); -fx-font-size:11px;");
         launchVerLabel.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
-        launchVerLabel.setMaxWidth(133);
+        launchVerLabel.setMaxWidth(188);
         HBox verRow = new HBox(launchVerLabel);
         verRow.setAlignment(Pos.CENTER);
         verRow.setPadding(new Insets(0, 0, 6, 0));
@@ -1645,8 +1639,7 @@ public class HomeView {
         group.setMinWidth(Region.USE_PREF_SIZE);
         group.setMaxHeight(Region.USE_PREF_SIZE); // 防止被父容器纵向拉伸
         group.setMinHeight(Region.USE_PREF_SIZE);
-        group.setStyle("-fx-background-color:#7ED957; -fx-background-radius:8;"
-                + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.25), 5, 0, 0, 2);");
+        group.setStyle("-fx-background-color:transparent;");
         return group;
     }
 
@@ -1906,6 +1899,7 @@ public class HomeView {
     private void updateSelection(LocalVersions.LocalVersion v) {
         verTitle.setText(v.displayName());
         launchVerLabel.setText(v.shortName());
+        app.setCenterTitle(v.displayName());
         // 记住这次选择：切页回来、重启启动器都停在这个版本上
         if (!v.id().equals(app.config.selectedVersionId)) {
             app.config.selectedVersionId = v.id();
@@ -2005,7 +1999,7 @@ public class HomeView {
         // 于是"换了版本、切一下页面回来又跳回第一项"。选中项持久化在 config，重启也能记住。
         LocalVersions.LocalVersion keep = versionList.getSelectionModel().getSelectedItem();
         String keepId = keep != null ? keep.id() : app.config.selectedVersionId;
-        // HMCL 式：只显示最终可玩版本（被加载器继承的基础原版自动隐藏）
+        // 通用：只显示最终可玩版本（被加载器继承的基础原版自动隐藏）
         Ui.async2(() -> app.localVersions.scanVisible(), vis -> {
             versionList.getItems().setAll(vis);
             instTitle.setText(vis.isEmpty() ? "缺少游戏版本" : "已安装版本");
@@ -2035,6 +2029,7 @@ public class HomeView {
         launchVerLabel.setText(NO_INSTANCE_TEXT);
         verTitle.setText(NO_INSTANCE_TEXT);
         verMeta.setText("点左侧「去下载版本 / 加载器」安装游戏版本或加载器后再启动。");
+        app.setCenterTitle("当前暂无游戏版本");
     }
 
     /** 主页「多人游戏」入口：进入内置联机页（房间号联机，不用填服务器地址、不用邀请码）。 */

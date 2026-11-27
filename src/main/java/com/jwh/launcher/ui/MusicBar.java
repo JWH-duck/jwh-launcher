@@ -1,5 +1,7 @@
 package com.jwh.launcher.ui;
 
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleDoubleProperty;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
@@ -84,6 +86,8 @@ public final class MusicBar extends VBox {
     private final List<String> tracks = new ArrayList<>();
     private int index = -1;
     private MediaPlayer player;
+    /** 是否正在播放（对外暴露，供主页唱片图标联动旋转）。 */
+    private final BooleanProperty playing = new SimpleBooleanProperty(false);
     /** 随机播放用；每次打开启动器、每次从游戏退回都重新抽一首。 */
     private final java.util.Random rnd = new java.util.Random();
     /** 「上一首」的回退栈：记录真实播过的顺序，让回退有意义（没有栈时随机挑）。 */
@@ -256,8 +260,49 @@ public final class MusicBar extends VBox {
 
     /** 启动器打开时随机播一首（不再固定从第一首开始）。 */
     public void autoPlay() {
+        autoPlay("");
+    }
+
+    /**
+     * 启动器打开时自动播放：配置了固定曲目则播它，否则随机一首。
+     * @param preferredTrack 配置保存的曲目展示名（去扩展名，小写归一）；空 = 随机
+     */
+    public void autoPlay(String preferredTrack) {
         if (tracks.isEmpty()) return;
-        if (player == null) playIndex(pickRandom(-1), false);
+        if (player == null) {
+            int target = -1;
+            if (preferredTrack != null && !preferredTrack.isBlank()) {
+                String key = preferredTrack.trim().toLowerCase();
+                for (int i = 0; i < tracks.size(); i++) {
+                    if (displayName(tracks.get(i)).toLowerCase().equals(key)) { target = i; break; }
+                }
+            }
+            playIndex(target < 0 ? pickRandom(-1) : target, false);
+        }
+    }
+
+    /** 内置曲目展示名列表（与实际播放顺序一致），供设置页下拉选用。 */
+    public List<String> trackDisplayNames() {
+        List<String> out = new ArrayList<>();
+        for (String t : tracks) out.add(displayName(t));
+        return out;
+    }
+
+    /** 当前曲目在列表中的下标；尚未播放返回 -1。 */
+    public int currentTrackIndex() {
+        return index;
+    }
+
+    /** 曲目展示名按下标取值；越界返回空串。 */
+    public String trackNameAt(int i) {
+        if (i < 0 || i >= tracks.size()) return "";
+        return displayName(tracks.get(i));
+    }
+
+    /** 按列表下标切歌（供设置页下拉选曲）。 */
+    public void playByIndex(int i) {
+        if (tracks.isEmpty()) return;
+        playIndex(i, true);
     }
 
     /** 点「启动游戏」时暂停（图标回到 ▶）。 */
@@ -299,6 +344,11 @@ public final class MusicBar extends VBox {
             i = rnd.nextInt(tracks.size());
         } while (i == exclude);
         return i;
+    }
+
+    /** 供主页唱片图标点击：切换播放 / 暂停。 */
+    public void togglePlay() {
+        toggle();
     }
 
     private void toggle() {
@@ -393,6 +443,17 @@ public final class MusicBar extends VBox {
 
     private void setPlayingIcon(boolean playing) {
         playIcon.setContent(playing ? ICON_PAUSE : ICON_PLAY);
+        this.playing.set(playing);
+    }
+
+    /** 是否正在播放（只读绑定用）。 */
+    public BooleanProperty playingProperty() {
+        return playing;
+    }
+
+    /** 是否正在播放。 */
+    public boolean isPlaying() {
+        return playing.get();
     }
 
     private void renderTitle() {

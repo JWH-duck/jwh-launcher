@@ -28,26 +28,32 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * 下载中心「整合包」Tab：从 Modrinth 搜索 .mrpack 整合包，
  * 点击后弹窗选择版本，一键安装为独立实例（自动装加载器 + 下载全部 Mod / 配置）。
+ * 列表卡片与 Mod / 光影包 / 材质包同款深色双列网格。
  */
 public class ModpackTab {
 
     private final LauncherApp app;
     private final ProgressSink sink;
     private final ModrinthApi api = new ModrinthApi();
-    /** 列表卡片统一锁定高度（px）：一行两张等高，描述超出两行截断，不再随文案长短伸缩。 */
-    private static final double CARD_HEIGHT = 96;
     /** 当前搜索结果（双列网格数据源）。 */
     private final List<ModrinthApi.Hit> items = new ArrayList<>();
     /** 双列卡片网格容器（ScrollPane 内竖向滚动）：两列各占 50%，以中线为界左右严格等宽。 */
     private final GridPane grid = new GridPane();
     private final TextField searchBox = new TextField();
-    private final Button searchBtn = new Button("搜索");
-    private final Button refreshBtn = new Button("刷新");
+    private final ComboBox<String> versionBox = new ComboBox<>();
+    private final ComboBox<String> sourceBox = new ComboBox<>();
+    private final ComboBox<String> sortBox = new ComboBox<>();
+    /** 版本下拉的 id → 显示名（通用：加载器实例显示 "1.21.1 · NeoForge 21.1.265"）。 */
+    private final java.util.Map<String, String> displayNames = new java.util.HashMap<>();
+    /** 版本下拉的 id → 纯游戏版本（neoforge-21.1.265 → 1.21.1，供搜索 API 使用）。 */
+    private final java.util.Map<String, String> mcBases = new java.util.HashMap<>();
 
     private final java.util.function.Consumer<com.jwh.launcher.util.Http.DownloadControl> attachCtrl;
     private final Runnable detachCtrl;
@@ -65,11 +71,36 @@ public class ModpackTab {
         VBox box = new VBox(10);
         box.setPadding(new Insets(12));
 
-        searchBox.setPromptText("搜索整合包，例如：vault / skyblock / rlcraft / create");
-        searchBox.setPrefWidth(340);
+        // 目标版本（本地已装实例）
+        versionBox.setPromptText("目标安装版本（必选）");
+        versionBox.setPrefWidth(280);
+        versionBox.setCellFactory(c -> new ListCell<>() {
+            @Override
+            protected void updateItem(String id, boolean empty) {
+                super.updateItem(id, empty);
+                setText(empty || id == null ? null : displayNames.getOrDefault(id, id));
+            }
+        });
+        versionBox.setButtonCell(new ListCell<>() {
+            @Override
+            protected void updateItem(String id, boolean empty) {
+                super.updateItem(id, empty);
+                setText(empty || id == null ? null : displayNames.getOrDefault(id, id));
+            }
+        });
+
+        // 数据源（整合包暂仅 Modrinth）
+        sourceBox.getItems().addAll("Modrinth");
+        sourceBox.getSelectionModel().selectFirst();
+        sourceBox.setPrefWidth(150);
+
+        searchBox.setPromptText("点击搜索…");
         HBox.setHgrow(searchBox, Priority.ALWAYS);
-        searchBtn.setStyle("-fx-background-color:" + Ui.ACCENT + "; -fx-text-fill:white;");
-        refreshBtn.setStyle("-fx-text-fill:" + Ui.TEXT + ";");
+
+        // 排序下拉
+        sortBox.getItems().addAll("下载量·高到低", "下载量·低到高", "名称 A–Z");
+        sortBox.getSelectionModel().selectFirst();
+        sortBox.setPrefWidth(150);
 
         // 双列卡片网格：ScrollPane 内竖向滚动，横向不滚
         grid.setStyle("-fx-background-color:transparent;");
@@ -87,26 +118,84 @@ public class ModpackTab {
         scroll.setStyle("-fx-background-color:transparent; -fx-background:" + Ui.PANEL + ";");
         VBox.setVgrow(scroll, Priority.ALWAYS);
 
-        HBox top = new HBox(8);
-        top.setAlignment(Pos.CENTER_LEFT);
-        top.getChildren().addAll(searchBox, searchBtn, refreshBtn);
+        sourceBox.getStyleClass().addAll("jwh-capsule", "jwh-capsule-plain");
+        versionBox.getStyleClass().addAll("jwh-capsule", "jwh-capsule-plain");
+        sortBox.getStyleClass().addAll("jwh-capsule", "jwh-capsule-plain");
+        searchBox.getStyleClass().add("jwh-search");
 
-        searchBtn.setOnAction(e -> search());
+        // 搜索框：放大镜内嵌深色胶囊
+        javafx.scene.shape.Circle lens = new javafx.scene.shape.Circle(9, 9, 5.5);
+        lens.setFill(null);
+        lens.setStroke(javafx.scene.paint.Color.rgb(255, 255, 255, 0.75));
+        lens.setStrokeWidth(1.4);
+        javafx.scene.shape.Line handle = new javafx.scene.shape.Line(12.6, 12.6, 16.0, 16.0);
+        handle.setStroke(javafx.scene.paint.Color.rgb(255, 255, 255, 0.75));
+        handle.setStrokeWidth(1.4);
+        javafx.scene.layout.Pane glyph = new javafx.scene.layout.Pane(lens, handle);
+        glyph.setPrefSize(18, 18);
+        glyph.setMinSize(18, 18);
+        glyph.setMaxSize(18, 18);
+        HBox searchWrap = new HBox(8, glyph, searchBox);
+        searchWrap.setAlignment(Pos.CENTER_LEFT);
+        searchWrap.getStyleClass().add("jwh-search-wrap");
+        HBox.setHgrow(searchBox, Priority.ALWAYS);
+        HBox.setHgrow(searchWrap, Priority.ALWAYS);
+
+        HBox filterBar = new HBox(10);
+        filterBar.setAlignment(Pos.CENTER_LEFT);
+        filterBar.getChildren().addAll(sourceBox, versionBox, searchWrap, sortBox);
         searchBox.setOnAction(e -> search());
-        refreshBtn.setOnAction(e -> {
-            IconCache.resetFailures();
-            search();
-        });
+        sortBox.setOnAction(e -> { applySort(); rebuildGrid(); });
+        box.getChildren().addAll(filterBar, scroll);
 
-        box.getChildren().addAll(top, scroll);
         Tab tab = new Tab("整合包", box);
         // 首次进入自动加载热门整合包
         tab.selectedProperty().addListener((obs, was, now) -> {
             if (Boolean.TRUE.equals(now) && items.isEmpty()) {
+                refreshVersions();
                 search();
             }
         });
         return tab;
+    }
+
+    /** 填充本地可见实例下拉；后台扫描，失败保持当前列表。 */
+    private void refreshVersions() {
+        String oldId = versionBox.getSelectionModel().getSelectedItem();
+        Ui.async2(() -> {
+            java.util.Map<String, String> names = new java.util.HashMap<>();
+            java.util.Map<String, String> bases = new java.util.HashMap<>();
+            List<String> ids = new ArrayList<>();
+            for (var v : app.localVersions.scanVisible()) {
+                names.put(v.id(), v.displayName());
+                bases.put(v.id(), v.mcBase() == null || v.mcBase().isBlank() ? v.id() : v.mcBase());
+                ids.add(v.id());
+            }
+            return new VersionOptions(names, bases, ids);
+        }, r -> {
+            displayNames.clear();
+            displayNames.putAll(r.names());
+            mcBases.clear();
+            mcBases.putAll(r.bases());
+            versionBox.getItems().setAll(r.ids());
+            if (oldId != null && r.ids().contains(oldId)) {
+                versionBox.getSelectionModel().select(oldId);
+            } else if (!r.ids().isEmpty()) {
+                versionBox.getSelectionModel().selectFirst();
+            }
+        }, e -> { /* 扫描失败保持当前列表 */ });
+    }
+
+    private record VersionOptions(java.util.Map<String, String> names,
+                                  java.util.Map<String, String> bases,
+                                  List<String> ids) {
+    }
+
+    /** 当前选中实例的纯游戏版本（供 Modrinth API 过滤）。 */
+    private String selectedMc() {
+        String id = versionBox.getSelectionModel().getSelectedItem();
+        if (id == null) return null;
+        return mcBases.getOrDefault(id, id);
     }
 
     /** 重建双列网格：两列各占 50% 宽度，以中线为界左右严格等宽；落单的最后一张占左列，右列留空。 */
@@ -120,56 +209,80 @@ public class ModpackTab {
         }
     }
 
-    /** 一张整合包卡片：背景为固定尺寸的 StackPane（高度锁死，不被文案撑高），内部图标+信息叠放其上。两列等宽、统一固定高度。 */
+    /** 一张整合包卡片：左图标 + 标题/作者/描述，底部版本胶囊 + 来源胶囊 + 右侧下载量。 */
     private StackPane cardNode(ModrinthApi.Hit h) {
         StackPane card = new StackPane();
-        card.setPadding(new Insets(10));
-        card.setStyle("-fx-background-color:" + Ui.PANEL + "; -fx-background-radius:10; -fx-border-radius:10;"
-                + "-fx-border-color:" + Ui.BORDER + "; -fx-border-width:1;");
+        card.setPadding(new Insets(12));
+        String baseStyle = "-fx-background-color:#2f2538; -fx-background-radius:12; -fx-border-radius:12;"
+                + " -fx-border-color:rgba(255,255,255,0.08); -fx-border-width:1;";
+        card.setStyle(baseStyle);
         card.setMinWidth(0);
         card.setPrefWidth(0);
         card.setMaxWidth(Double.MAX_VALUE);
-        // 背景层高度锁死为统一值：StackPane 固定尺寸后不随内部文案行数伸缩
-        card.setMinHeight(CARD_HEIGHT);
-        card.setPrefHeight(CARD_HEIGHT);
-        card.setMaxHeight(CARD_HEIGHT);
+        card.setMinHeight(150);
+        card.setPrefHeight(150);
+        card.setMaxHeight(150);
         card.setAlignment(Pos.TOP_LEFT);
         card.setCursor(Cursor.HAND);
         card.setOnMouseClicked(e -> openDetailPage(h));
+        card.setOnMouseEntered(e -> card.setStyle(baseStyle.replace("rgba(255,255,255,0.08)", "#d982c2")));
+        card.setOnMouseExited(e -> card.setStyle(baseStyle));
 
         ImageView iconView = new ImageView();
-        iconView.setFitWidth(36);
-        iconView.setFitHeight(36);
+        iconView.setFitWidth(48);
+        iconView.setFitHeight(48);
         iconView.setPreserveRatio(true);
         iconView.setSmooth(true);
         Label titleLabel = new Label(h.title());
-        titleLabel.setStyle("-fx-text-fill:" + Ui.TEXT + "; -fx-font-size:14px; -fx-font-weight:bold;");
+        titleLabel.setStyle("-fx-text-fill:#ffffff; -fx-font-size:15px; -fx-font-weight:bold;");
         titleLabel.setMaxWidth(Double.MAX_VALUE);
-        titleLabel.setMinHeight(20);
-        titleLabel.setPrefHeight(20); // 标题恒单行，高度锁死
-        Label metaLabel = new Label("下载量 " + h.downloads()
-                + "    [" + String.join("/", h.categories()) + "]");
-        metaLabel.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
-        metaLabel.setMaxWidth(Double.MAX_VALUE);
-        metaLabel.setMinHeight(16);
-        metaLabel.setPrefHeight(16); // 元信息恒单行，高度锁死
+        titleLabel.setMinHeight(22);
         Label descLabel = new Label(h.description());
-        descLabel.setStyle("-fx-text-fill:" + Ui.TEXT_DIM + "; -fx-font-size:12px;");
+        descLabel.setStyle("-fx-text-fill:#b9bfc7; -fx-font-size:12px;");
         descLabel.setWrapText(true);
         descLabel.setMaxWidth(Double.MAX_VALUE);
-        descLabel.setMinHeight(0);
         descLabel.setPrefHeight(34);
-        descLabel.setMaxHeight(34); // 简介恒占两行位，超出截断
-        VBox info = new VBox(2, titleLabel, metaLabel, descLabel);
+        descLabel.setMaxHeight(34);
+
+        List<javafx.scene.Node> infoChildren = new ArrayList<>();
+        infoChildren.add(titleLabel);
+        if (h.author() != null && !h.author().isBlank()) {
+            Label authorLabel = new Label("by " + h.author());
+            authorLabel.setStyle("-fx-text-fill:#b9bfc7; -fx-font-size:12px;");
+            authorLabel.setMaxWidth(Double.MAX_VALUE);
+            infoChildren.add(authorLabel);
+        }
+        infoChildren.add(descLabel);
+        VBox info = new VBox(6);
+        info.getChildren().addAll(infoChildren);
         info.setMaxWidth(Double.MAX_VALUE);
-        info.setMinHeight(74);
-        info.setPrefHeight(74);
-        info.setMaxHeight(74);
-        HBox row = new HBox(10, iconView, info);
-        row.setAlignment(Pos.CENTER_LEFT);
-        row.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(info, Priority.ALWAYS);
-        card.getChildren().add(row);
+
+        List<javafx.scene.Node> bottomChildren = new ArrayList<>();
+        String ver = versionTag(h);
+        if (ver != null) {
+            Label versionTag = new Label(ver);
+            versionTag.setStyle("-fx-background-color:#2c2336; -fx-text-fill:#b9bfc7; -fx-font-size:11px;"
+                    + " -fx-background-radius:6; -fx-padding:3 8;");
+            bottomChildren.add(versionTag);
+        }
+        Label sourceTag = new Label("Modrinth");
+        sourceTag.setStyle("-fx-background-color:#2c2336; -fx-text-fill:#b9bfc7; -fx-font-size:11px;"
+                + " -fx-background-radius:6; -fx-padding:3 8;");
+        bottomChildren.add(sourceTag);
+        Region spacer = new Region();
+        Label dlLabel = new Label(formatDownloads(h.downloads()) + " 下载");
+        dlLabel.setStyle("-fx-text-fill:#b9bfc7; -fx-font-size:12px;");
+        bottomChildren.add(spacer);
+        bottomChildren.add(dlLabel);
+        HBox bottom = new HBox(10);
+        bottom.getChildren().addAll(bottomChildren);
+        bottom.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        VBox content = new VBox(10, new HBox(12, iconView, info), bottom);
+        content.setMaxWidth(Double.MAX_VALUE);
+        card.getChildren().add(content);
 
         iconView.setImage(Ui.GRASS_BLOCK);
         String icon = h.iconUrl();
@@ -180,25 +293,58 @@ public class ModpackTab {
                 iconView.setImage(cached);
             } else {
                 IconCache.ensure(icon, img -> {
-                    if (icon.equals(currentIconUrl)) {
-                        iconView.setImage(img);
-                    }
+                    if (icon.equals(currentIconUrl)) iconView.setImage(img);
                 });
             }
         }
         return card;
     }
 
+    /** 卡片版本胶囊：优先匹配当前所选 MC 版本，否则取列表末项（最新）。无版本信息返回 null。 */
+    private String versionTag(ModrinthApi.Hit h) {
+        if (h.versions() == null || h.versions().isEmpty()) return null;
+        String mc = selectedMc();
+        if (mc != null && !mc.isBlank()) {
+            for (String v : h.versions()) {
+                if (mc.equals(v)) return v;
+            }
+        }
+        return h.versions().get(h.versions().size() - 1);
+    }
+
+    /** 按当前排序下拉重排本地结果（不重新请求接口）。 */
+    private void applySort() {
+        String s = sortBox.getValue();
+        Comparator<ModrinthApi.Hit> cmp;
+        if ("下载量·低到高".equals(s)) {
+            cmp = Comparator.comparingLong(ModrinthApi.Hit::downloads);
+        } else if ("名称 A–Z".equals(s)) {
+            cmp = Comparator.comparing(h -> h.title() == null ? "" : h.title().toLowerCase(Locale.ROOT));
+        } else {
+            cmp = Comparator.comparingLong(ModrinthApi.Hit::downloads).reversed();
+        }
+        items.sort(cmp);
+    }
+
+    /** 下载量格式化：1.2M / 3.4K，不足千显示原值。 */
+    private static String formatDownloads(long d) {
+        if (d >= 1_000_000) return String.format(Locale.US, "%.1fM", d / 1_000_000.0);
+        if (d >= 1_000) return String.format(Locale.US, "%.1fK", d / 1_000.0);
+        return String.valueOf(d);
+    }
+
     private void search() {
         String q = searchBox.getText().trim();
+        String mc = selectedMc();
         items.clear();
         rebuildGrid();
         app.setStatus("正在搜索整合包…");
         Ui.async(() -> {
-            List<ModrinthApi.Hit> hits = api.search(q, ModrinthApi.Type.MODPACK, null, null, 60);
+            List<ModrinthApi.Hit> hits = api.search(q, ModrinthApi.Type.MODPACK, mc, null, 60);
             Platform.runLater(() -> {
                 items.clear();
                 items.addAll(hits);
+                applySort();
                 rebuildGrid();
                 app.setStatus("找到 " + hits.size() + " 个整合包");
                 if (hits.isEmpty()) {
